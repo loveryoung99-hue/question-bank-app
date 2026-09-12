@@ -125,9 +125,9 @@ def extract_exam_data_via_gemini(image):
           ]
         }
         """
-        # تم تعديل اسم النموذج إلى الموديل المعتمد والمتاح حالياً
+        # تم ضبط النموذج إلى gemini-2.5-flash المعتمد للعمل بكفاءة
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.5-flash',
             contents=[prompt, image]
         )
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
@@ -146,17 +146,21 @@ with tab1:
     st.subheader("تحليل ورقة امتحانية من صورة واختيار التصنيفات")
     uploaded_file = st.file_uploader("اختر صورة الورقة الامتحانية", type=["jpg", "jpeg", "png"])
     
+    cropped_img = None
     if uploaded_file:
         img = Image.open(uploaded_file)
         st.info("💡 يمكنك قص الجزء المطلوب من الصورة لزيادة دقة التحليل:")
         cropped_img = st_cropper(img, realtime_update=True, box_color='#FF0000', aspect_ratio=None)
         
         if st.button("🔍 استخراج البيانات بالذكاء الاصطناعي", type="primary"):
-            with st.spinner("جاري تحليل الأسئلة واستخراج المحتوى..."):
-                extracted = extract_exam_data_via_gemini(cropped_img)
-                if extracted:
-                    st.success("تم التحليل بنجاح! طابق الحقول بالأسفل.")
-                    st.session_state['extracted_data'] = extracted
+            if cropped_img is not None:
+                with st.spinner("جاري تحليل الأسئلة واستخراج المحتوى..."):
+                    extracted = extract_exam_data_via_gemini(cropped_img)
+                    if extracted:
+                        st.success("تم التحليل بنجاح! طابق الحقول بالأسفل.")
+                        st.session_state['extracted_data'] = extracted
+            else:
+                st.warning("يرجى التأكد من تحميل وقص الصورة أولاً.")
 
     data = st.session_state.get('extracted_data', {})
     

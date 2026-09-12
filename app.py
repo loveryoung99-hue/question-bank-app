@@ -5,6 +5,7 @@ from PIL import Image, ImageEnhance
 from google import genai
 from google.genai import types
 from streamlit_cropper import st_cropper
+import streamlit.components.v1 as components
 
 # ================= 1. الإعدادات والصفحة =================
 st.set_page_config(
@@ -268,8 +269,26 @@ with tab1:
         with c_q2:
             q_mark = st.text_input("الدرجة", value=q.get("mark", ""), key=f"gen_qmark_{idx}")
         
+        # حقن كود CSS لتوجيه النص تلقائياً (عربي يمين، إنجليزي يسار)
+        st.markdown(
+            """
+            <style>
+            textarea {
+                direction: auto !important;
+                text-align: start !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        
         q_cnt = st.text_area("نص السؤال", value=q.get("content", ""), height=90, key=f"gen_qcnt_{idx}")
         q_svg = st.text_area("كود SVG للرسم", value=q.get("svg_code", ""), height=70, key=f"gen_qsvg_{idx}")
+        
+        # معاينة وتطابق الرسم الهندسي (SVG) بشكل مرئي مباشر
+        if q_svg.strip():
+            st.markdown("🎨 **معاينة الرسم الهندسي (مطابق للأصل):**")
+            components.html(f"<div style='display: flex; justify-content: center; background: white; padding: 10px; border-radius: 5px;'>{q_svg}</div>", height=150, scrolling=True)
         
         editable_questions.append({
             "question_number": q_num,
@@ -364,8 +383,26 @@ with tab2:
                                                         with col_q2:
                                                             q_mark = st.text_input("الدرجة", value=q.get("mark", ""), key=f"qmark_{exam_id}_{idx}")
                                                         
+                                                        # حقن CSS لتوجيه النص في مجلد العرض أيضاً
+                                                        st.markdown(
+                                                            """
+                                                            <style>
+                                                            textarea {
+                                                                direction: auto !important;
+                                                                text-align: start !important;
+                                                            }
+                                                            </style>
+                                                            """,
+                                                            unsafe_allow_html=True
+                                                        )
+                                                        
                                                         q_cnt = st.text_area("نص السؤال", value=q.get("content", ""), height=90, key=f"qcnt_{exam_id}_{idx}")
                                                         q_svg = st.text_area("كود SVG للرسم", value=q.get("svg_code", ""), height=70, key=f"qsvg_{exam_id}_{idx}")
+                                                        
+                                                        # معاينة الرسم الهندسي في المجلدات
+                                                        if q_svg.strip():
+                                                            st.markdown("🎨 **معاينة الرسم الهندسي (مطابق للأصل):**")
+                                                            components.html(f"<div style='display: flex; justify-content: center; background: white; padding: 10px; border-radius: 5px;'>{q_svg}</div>", height=150, scrolling=True)
                                                         
                                                         updated_q_list.append({
                                                             "question_number": q_num,

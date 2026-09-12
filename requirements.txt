@@ -4,3 +4,4 @@ pandas
 pillow
 google-genai
 streamlit-cropper
+pypdf

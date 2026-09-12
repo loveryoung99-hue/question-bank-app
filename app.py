@@ -14,9 +14,9 @@ st.set_page_config(
 )
 
 # جلب المفاتيح من Streamlit Secrets أو البيئة
-SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
-SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+SUPABASE_URL = "https://wtmkotentkrqvirvquzn.supabase.co/rest/v1/"  
+SUPABASE_KEY = "sb_publishable_NtDev7qGyAaw0vCNxjRR2w_VoIrmZlG"
+GEMINI_API_KEY = "AQ.Ab8RN6LWMZaofavEmyWG8h16yx1fHkecKW-IEapQriduO_ybBQ"  
 
 HEADERS = {
     "apikey": SUPABASE_KEY,

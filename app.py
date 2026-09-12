@@ -40,7 +40,7 @@ SHARED_SUBJECTS = ["اللغة العربية", "اللغة الإنجليزية
 SCIENTIFIC_SUBJECTS = ["الرياضيات", "الفيزياء", "الكيمياء", "الأحياء"]
 LITERARY_SUBJECTS = ["التاريخ", "الجغرافيا", "الرياضيات", " الاقتصاد"]
 
-YEARS_LIST = [str(y) for y in range(2026, 2015, -1)]
+YEARS_LIST = [str(y) for y in range(2026, 2010, -1)]
 TERMS_LIST = ["الدور الأول", "الدور الثاني", "الدور الثالث", "تمهيدي"]
 
 def get_subjects_for_branch(branch):

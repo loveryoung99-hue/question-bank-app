@@ -26,6 +26,10 @@ HEADERS = {
 }
 
 def clean_supabase_url(url):
+    # تنظيف المسار لضمان عدم تكرار rest/v1 أو الشرطة المائلة
+    url = url.rstrip('/')
+    if url.endswith('/rest/v1'):
+        url = url[:-8]
     return url.rstrip('/')
 
 # ================= الثوابت والقوائم الثابتة لمنع اختلاف الإدخال =================
@@ -54,12 +58,10 @@ def fetch_cloud_exams():
 
 def insert_cloud_exam(exam_record):
     if not SUPABASE_URL or not exam_record:
-        st.error("رابط Supabase غير مفقود أو البيانات فارغة.")
+        st.error("رابط Supabase مفقود أو البيانات فارغة.")
         return
     try:
         base_url = clean_supabase_url(SUPABASE_URL)
-        
-        # التأكد من صحة مسار الجدول (تأكد أن اسم الجدول في قاعدة بياناتك هو exam_papers تماماً)
         table_name = "exam_papers"
         
         # فحص لمنع تكرار نفس النموذج المرفوع مسبقاً
@@ -77,7 +79,6 @@ def insert_cloud_exam(exam_record):
             st.success("✅ تم حفظ الورقة الامتحانية بنجاح!")
             st.rerun()
         else:
-            # عرض تفاصيل الخطأ بوضوح لتشخيص المشكلة في حال تطورت
             st.error(f"❌ خطأ في الحفظ (رمز الحالة {res.status_code}):")
             st.code(res.text)
             st.info(f"الرابط المستخدم: {url}")
@@ -249,7 +250,7 @@ with tab2:
     cloud_exams = fetch_cloud_exams()
 
     if not cloud_exams:
-        st.info("لا توجد أوراق امتحانية مخزنة حتى الآن أو لم يتم جلب البيانات.")
+        st.info("لا توجد أوراق امتحانية مخزنة حتى الآن.")
     else:
         tree = {}
         for exam in cloud_exams:

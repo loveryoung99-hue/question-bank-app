@@ -31,11 +31,11 @@ def clean_supabase_url(url):
         url = url[:-8]
     return url.rstrip('/')
 
-# ================= الثوابت المحدثة بناءً على طلبك =================
+# ================= الثوابت المحدثة =================
 STAGES_LIST = ["السادس الاعدادي", "الخامس الاعدادي", "الرابع الاعدادي"]
-BRANCHES_LIST = ["العلمي", "الأدبي"]
+BRANCHES_LIST = ["العلمي", "الأدبي", "المواد المشتركة"]
 
-# المواد المشتركة والعلمية والأدبية
+# تصنيف المواد بناءً على الخيار
 SHARED_SUBJECTS = ["اللغة العربية", "اللغة الإنجليزية", "الاسلامية"]
 SCIENTIFIC_SUBJECTS = ["الرياضيات", "الفيزياء", "الكيمياء", "الأحياء"]
 LITERARY_SUBJECTS = ["التاريخ", "الجغرافيا", "الرياضيات", " الاقتصاد"]
@@ -45,9 +45,11 @@ TERMS_LIST = ["الدور الأول", "الدور الثاني", "الدور ا
 
 def get_subjects_for_branch(branch):
     if branch == "العلمي":
-        return sorted(list(set(SHARED_SUBJECTS + SCIENTIFIC_SUBJECTS)))
-    else:
-        return sorted(list(set(SHARED_SUBJECTS + LITERARY_SUBJECTS)))
+        return sorted(SCIENTIFIC_SUBJECTS)
+    elif branch == "الأدبي":
+        return sorted(LITERARY_SUBJECTS)
+    else:  # المواد المشتركة
+        return sorted(SHARED_SUBJECTS)
 
 # ================= 2. دوال التعامل مع Supabase =================
 def fetch_cloud_exams():
@@ -78,7 +80,7 @@ def insert_cloud_exam(exam_record):
         check_res = requests.get(check_url, headers=HEADERS)
         
         if check_res.status_code == 200 and len(check_res.json()) > 0:
-            st.warning("⚠️ هذه الورقة الامتحانية مخزنة مسبقاً في قاعدة البيانات لنفس الفرع!")
+            st.warning("⚠️ هذه الورقة الامتحانية مخزنة مسبقاً في قاعدة البيانات لنفس التصنيف!")
             return
 
         url = f"{base_url}/rest/v1/{table_name}"
@@ -135,7 +137,7 @@ def extract_exam_data_via_gemini(image):
           "year": "السنة الدراسية (مثال: 2024)",
           "term": "الدور (مثال: الدور الأول أو الدور الثاني أو الدور الثالث أو تمهيدي)",
           "stage": "المرحلة (اختر حصراً من: السادس الاعدادي، الخامس الاعدادي، الرابع الاعدادي)",
-          "branch": "الفرع (اختر حصراً من: العلمي أو الأدبي)",
+          "branch": "الفرع أو القسم (اختر: العلمي أو الأدبي أو المواد المشتركة بناءً على المادة المستخرجة)",
           "questions": [
              {
                "question_number": "رقم السؤال/الفرع (مثال: س1/أ)",
@@ -196,16 +198,17 @@ with tab1:
         
     with col_in2:
         ai_branch = data.get("branch", "العلمي")
-        # تنظيف مسماة الفرع إذا جاء بصيغة قديمة
-        if "العلمي" in ai_branch:
-            ai_branch = "العلمي"
+        if "المشتركة" in ai_branch or "مشتركة" in ai_branch:
+            ai_branch = "المواد المشتركة"
         elif "الأدبي" in ai_branch:
             ai_branch = "الأدبي"
+        elif "العلمي" in ai_branch:
+            ai_branch = "العلمي"
+            
         default_branch_idx = BRANCHES_LIST.index(ai_branch) if ai_branch in BRANCHES_LIST else 0
-        selected_branch = st.selectbox("الفرع", BRANCHES_LIST, index=default_branch_idx)
+        selected_branch = st.selectbox("الفرع / القسم", BRANCHES_LIST, index=default_branch_idx)
         
     with col_in3:
-        # جلب المواد المتاحة حسب الفرع المحدد (تتضمن المواد المشتركة تلقائياً)
         current_branch_subjects = get_subjects_for_branch(selected_branch)
         ai_subject = data.get("subject", "الرياضيات")
         default_sub_idx = current_branch_subjects.index(ai_subject) if ai_subject in current_branch_subjects else 0
@@ -286,7 +289,7 @@ with tab2:
         for stg_name, branches in tree.items():
             with st.expander(f"🎓 مجلد المرحلة: **{stg_name}**", expanded=False):
                 for brn_name, subjects in branches.items():
-                    with st.expander(f"📂 الفرع: **{brn_name}**", expanded=False):
+                    with st.expander(f"📂 الفرع / القسم: **{brn_name}**", expanded=False):
                         for sbj_name, years in subjects.items():
                             with st.expander(f"📚 المادة: **{sbj_name}**", expanded=False):
                                 for yr_name, terms in years.items():
@@ -302,10 +305,16 @@ with tab2:
                                                     with c1:
                                                         e_stage = st.selectbox("المرحلة", STAGES_LIST, index=STAGES_LIST.index(exam.get("stage")) if exam.get("stage") in STAGES_LIST else 0, key=f"stg_{exam_id}")
                                                     with c2:
-                                                        e_branch = st.selectbox("الفرع", BRANCHES_LIST, index=BRANCHES_LIST.index(exam.get("branch")) if exam.get("branch") in BRANCHES_LIST else 0, key=f"brn_{exam_id}")
+                                                        current_brn = exam.get("branch")
+                                                        if current_brn not in BRANCHES_LIST:
+                                                            current_brn = "العلمي"
+                                                        e_branch = st.selectbox("الفرع", BRANCHES_LIST, index=BRANCHES_LIST.index(current_brn), key=f"brn_{exam_id}")
                                                     with c3:
                                                         valid_subs = get_subjects_for_branch(e_branch)
-                                                        e_subject = st.selectbox("المادة", valid_subs, index=valid_subs.index(exam.get("subject")) if exam.get("subject") in valid_subs else 0, key=f"sub_{exam_id}")
+                                                        current_sub = exam.get("subject")
+                                                        if current_sub not in valid_subs:
+                                                            current_sub = valid_subs[0]
+                                                        e_subject = st.selectbox("المادة", valid_subs, index=valid_subs.index(current_sub), key=f"sub_{exam_id}")
                                                     with c4:
                                                         e_year = st.selectbox("السنة", YEARS_LIST, index=YEARS_LIST.index(str(exam.get("year"))) if str(exam.get("year")) in YEARS_LIST else 0, key=f"yr_{exam_id}")
                                                     with c5:

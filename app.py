@@ -148,7 +148,7 @@ def extract_exam_data_via_gemini(image):
         }
         """
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.6-flash',
             contents=[prompt, image]
         )
         clean_text = response.text.replace("```json", "").replace("```", "").strip()

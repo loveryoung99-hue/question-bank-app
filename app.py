@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import json
-from PIL import Image
+from PIL import Image, ImageEnhance
 from google import genai
 from google.genai import types
 from streamlit_cropper import st_cropper
@@ -163,7 +163,7 @@ st.title("📚 بنك الأسئلة الامتحانية - منصة 99+1")
 
 tab1, tab2 = st.tabs(["📤 رفع وتحليل ورقة امتحانية", "📁 إدارة الأوراق الامتحانية (المجلدات)"])
 
-# ----------------- التبويب الأول: الرفع والقص -----------------
+# ----------------- التبويب الأول: الرفع والقص والتحسين -----------------
 with tab1:
     st.subheader("تحليل ورقة امتحانية من صورة واختيار التصنيفات")
     uploaded_file = st.file_uploader("اختر صورة الورقة الامتحانية", type=["jpg", "jpeg", "png"])
@@ -171,6 +171,20 @@ with tab1:
     cropped_img = None
     if uploaded_file:
         img = Image.open(uploaded_file)
+        
+        # --- أدوات تحسين جودة الصورة ---
+        with st.expander("🛠️ أدوات تحسين جودة الصورة وتدويرها", expanded=False):
+            col_rot, col_enh = st.columns(2)
+            with col_rot:
+                rotation = st.selectbox("تدوير الصورة", [0, 90, 180, 270], format_func=lambda x: f"{x}°")
+                if rotation != 0:
+                    img = img.rotate(rotation, expand=True)
+            with col_enh:
+                contrast_val = st.slider("مستوى التباين (Contrast)", 0.5, 2.0, 1.0, 0.1)
+                if contrast_val != 1.0:
+                    enhancer = ImageEnhance.Contrast(img)
+                    img = enhancer.enhance(contrast_val)
+        
         st.info("💡 يمكنك قص الجزء المطلوب من الصورة لزيادة دقة التحليل:")
         cropped_img = st_cropper(img, realtime_update=True, box_color='#FF0000', aspect_ratio=None)
         

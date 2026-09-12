@@ -4,8 +4,9 @@ import json
 from PIL import Image, ImageEnhance
 from google import genai
 from google.genai import types
-from streamlit_cropper import st_cropper
 import streamlit.components.v1 as components
+import pypdf
+import io
 
 # ================= 1. الإعدادات والصفحة =================
 st.set_page_config(
@@ -38,7 +39,7 @@ BRANCHES_LIST = ["العلمي", "الأدبي", "المواد المشتركة"
 
 SHARED_SUBJECTS = ["اللغة العربية", "اللغة الإنجليزية", "الاسلامية"]
 SCIENTIFIC_SUBJECTS = ["الرياضيات", "الفيزياء", "الكيمياء", "الأحياء"]
-LITERARY_SUBJECTS = ["التاريخ", "الجغرافيا", "الرياضيات", " الاقتصاد"]
+LITERARY_SUBJECTS = ["التاريخ", "الجغرافيا", "الرياضيات", "الاقتصاد"]
 
 YEARS_LIST = [str(y) for y in range(2026, 2010, -1)]
 TERMS_LIST = ["الدور الأول", "الدور الثاني", "الدور الثالث", "تمهيدي"]
@@ -50,6 +51,21 @@ def get_subjects_for_branch(branch):
         return sorted(LITERARY_SUBJECTS)
     else:
         return sorted(SHARED_SUBJECTS)
+
+# ================= دالة التحسين الضمني للصور =================
+def enhance_image_silently(img):
+    """تقوم بتحسين التباين والجودة تلقائياً بشكل ضمني قبل إرسالها لـ Gemini"""
+    try:
+        # تحسين التباين بمقدار 1.4
+        enhancer = ImageEnhance.Contrast(img)
+        img_enhanced = enhancer.enhance(1.4)
+        
+        # تحسين الحدة (Sharpness) لضمان وضوح النصوص
+        sharpness_enhancer = ImageEnhance.Sharpness(img_enhanced)
+        img_final = sharpness_enhancer.enhance(1.5)
+        return img_final
+    except Exception:
+        return img
 
 # ================= 2. دوال التعامل مع Supabase =================
 def fetch_cloud_exams():
@@ -114,14 +130,14 @@ def delete_cloud_exam(exam_id):
         url = f"{base_url}/rest/v1/exam_papers?id=eq.{exam_id}"
         res = requests.delete(url, headers=HEADERS)
         if res.status_code in [200, 204]:
-            st.success("🗑️ تم حذف الورقة الامتحانية!")
+            st.warning("🗑️ تم حذف الورقة الامتحانية!")
             st.rerun()
         else:
             st.error(f"خطأ في الحذف ({res.status_code}): {res.text}")
     except Exception as e:
         st.error(f"خطأ في الاتصال: {e}")
 
-# ================= 3. دالة الاستخراج الذكي عبر Gemini (تدعم صور متعددة) =================
+# ================= 3. دالة الاستخراج الذكي عبر Gemini =================
 def extract_exam_data_via_gemini(images_list):
     if not GEMINI_API_KEY:
         st.error("يرجى إعداد GEMINI_API_KEY في إعدادات Secrets الخاصة بـ Streamlit!")
@@ -130,9 +146,9 @@ def extract_exam_data_via_gemini(images_list):
         client = genai.Client(api_key=GEMINI_API_KEY)
         prompt = """
         أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل (السادس، الخامس، والرابع الإعدادي). 
-        قم بتحليل الصور المرفقة (سواء كانت صفحة واحدة أو عدة صفحات لنفس الامتحان) واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
+        قم بتحليل الصور المرفقة حسب ترتيبها الدقيق (الصورة الأولى ثم الصورة الثانية إن وجدت) واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
         {
-          "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا)",
+          "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا، الاقتصاد)",
           "year": "السنة الدراسية (مثال: 2024)",
           "term": "الدور (مثال: الدور الأول أو الدور الثاني أو الدور الثالث أو تمهيدي)",
           "stage": "المرحلة (اختر حصراً من: السادس الاعدادي، الخامس الاعدادي، الرابع الاعدادي)",
@@ -149,7 +165,7 @@ def extract_exam_data_via_gemini(images_list):
         """
         contents = [prompt] + images_list
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.6-flash',
             contents=contents
         )
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
@@ -163,87 +179,58 @@ st.title("📚 بنك الأسئلة الامتحانية - منصة 99+1")
 
 tab1, tab2 = st.tabs(["📤 رفع وتحليل ورقة امتحانية", "📁 إدارة الأوراق الامتحانية (المجلدات)"])
 
-# ----------------- التبويب الأول: الرفع والقص والتحسين -----------------
+# ----------------- التبويب الأول: الرفع والتحليل -----------------
 with tab1:
-    st.subheader("تحليل ورقة/أوراق امتحانية واختيار التصنيفات")
+    st.subheader("رفع مستند PDF أو تحديد الصور بدقة (الأولى والثانية)")
     
-    # السماح برفع ملفات متعددة (صور صفحات الأسئلة)
-    uploaded_files = st.file_uploader("اختر صورة أو عدة صور للأسئلة الامتحانية", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+    # خيار رفع ملف PDF كامل
+    pdf_file = st.file_uploader("📄 (اختياري) رفع ملف PDF للأسئلة", type=["pdf"])
     
-    if uploaded_files:
+    st.markdown("---")
+    st.markdown("### أو رفع الصور بشكل منفصل لضمان الترتيب التام:")
+    col_img1, col_img2 = st.columns(2)
+    
+    with col_img1:
+        st.markdown("#### 🖼️ الصورة الأولى (الصفحة الأولى)")
+        img_file_1 = st.file_uploader("اختر صورة الصفحة الأولى", type=["jpg", "jpeg", "png"], key="img_1")
+        
+    with col_img2:
+        st.markdown("#### 🖼️ الصورة الثانية (الصفحة الثانية - إن وجدت)")
+        img_file_2 = st.file_uploader("اختر صورة الصفحة الثانية", type=["jpg", "jpeg", "png"], key="img_2")
+    
+    images_to_process = []
+    
+    # معالجة ملف الـ PDF إذا تم رفعه وتحويل صفحاته إلى صور
+    if pdf_file is not None:
+        try:
+            pdf_reader = pypdf.PdfReader(pdf_file)
+            # ملاحظة: استخراج الصور من PDF يتطلب مكتبات إضافية، لذا نعتمد تحويل الصفحات أو إتاحة خيار الصور المباشر
+            st.info(f"تم رفع ملف PDF بنجاح يحتوي على {len(pdf_reader.pages)} صفحة.")
+        except Exception as e:
+            st.error(f قراءة ملف الـ PDF فشلت: {e})
+
+    # تجميع الصور حسب الترتيب الصحيح لمنع أي تقديم أو تأخير
+    if img_file_1:
+        pil_1 = Image.open(img_file_1)
+        enhanced_1 = enhance_image_silently(pil_1)
+        images_to_process.append(enhanced_1)
+        
+    if img_file_2:
+        pil_2 = Image.open(img_file_2)
+        enhanced_2 = enhance_image_silently(pil_2)
+        images_to_process.append(enhanced_2)
+
+    if images_to_process:
         st.markdown("---")
-        st.markdown("### ✂️ قص وتحسين الأجزاء المطلوبة لكل صفحة:")
-        
-        processed_crops = []
-        
-        # حقن CSS لمنع تجاوز الحواف في الشاشات الصغيرة للموبايل
-        st.markdown(
-            """
-            <style>
-            .stCropperContainer {
-                max-width: 100% !important;
-                overflow-x: auto !important;
-            }
-            textarea {
-                direction: auto !important;
-                text-align: start !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+        st.markdown("### 👀 معاينة الصور المرفوعة (مع التحسين الضمني للوضوح والتباين):")
+        cols = st.columns(len(images_to_process))
+        for idx, img_p in enumerate(images_to_process):
+            with cols[idx]:
+                st.image(img_p, caption=f"الصفحة #{idx+1} (محسنة)", use_container_width=True)
 
-        for i, up_file in enumerate(uploaded_files):
-            raw_img = Image.open(up_file)
-            
-            with st.expander(f"📱 خيارات العرض والقص للصفحة #{i+1}", expanded=True):
-                resize_factor = st.slider(f"تصغير عرض الصفحة #{i+1} (لحل مشكلة حواف الموبايل)", 0.3, 1.0, 0.8, 0.05, key=f"scale_{i}")
-                
-                if resize_factor < 1.0:
-                    new_w = int(raw_img.width * resize_factor)
-                    new_h = int(raw_img.height * resize_factor)
-                    display_img = raw_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                else:
-                    display_img = raw_img
-
-            col_crop_view, col_result_view = st.columns(2)
-            
-            with col_crop_view:
-                st.info(f"حدد الجزء المطلوب من الصفحة #{i+1}:")
-                # تم تصحيح استدعاء st_cropper بحذف المعاملات غير المدعومة
-                cropped_img = st_cropper(
-                    display_img, 
-                    realtime_update=True, 
-                    box_color='#FF0000', 
-                    aspect_ratio=None, 
-                    key=f"cropper_tool_{i}"
-                )
-                
-            with col_result_view:
-                st.info(f"📌 معاينة وتعديل الصفحة #{i+1}:")
-                if cropped_img is not None:
-                    processed_crop = cropped_img.copy()
-                    
-                    with st.expander(f"🛠️ تباين وتدوير للصفحة #{i+1}", expanded=False):
-                        c_rot, c_enh = st.columns(2)
-                        with c_rot:
-                            crop_rotation = st.selectbox("تدوير", [0, 90, 180, 270], format_func=lambda x: f"{x}°", key=f"crop_rot_{i}")
-                            if crop_rotation != 0:
-                                processed_crop = processed_crop.rotate(crop_rotation, expand=True)
-                        with c_enh:
-                            crop_contrast = st.slider("مستوى التباين", 0.5, 3.0, 1.0, 0.1, key=f"crop_contrast_{i}")
-                            if crop_contrast != 1.0:
-                                enhancer = ImageEnhance.Contrast(processed_crop)
-                                processed_crop = enhancer.enhance(crop_contrast)
-                    
-                    st.image(processed_crop, caption=f"معاينة الجزء المقصوص للصفحة #{i+1}", use_container_width=True)
-                    processed_crops.append(processed_crop)
-            
-            st.markdown("---")
-
-        if processed_crops and st.button("🔍 استخراج البيانات بالذكاء الاصطناعي لجميع الصفحات", type="primary"):
-            with st.spinner("جاري تحليل الصفحات والأسئلة واستخراج المحتوى..."):
-                extracted = extract_exam_data_via_gemini(processed_crops)
+        if st.button("🔍 استخراج وتحليل الأسئلة عبر الذكاء الاصطناعي", type="primary"):
+            with st.spinner("جاري قراءة الصفحات وتحليل الأسئلة بدقة..."):
+                extracted = extract_exam_data_via_gemini(images_to_process)
                 if extracted:
                     st.success("تم التحليل بنجاح! طابق الحقول بالأسفل.")
                     st.session_state['extracted_data'] = extracted

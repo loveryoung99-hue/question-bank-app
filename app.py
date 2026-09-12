@@ -121,8 +121,8 @@ def delete_cloud_exam(exam_id):
     except Exception as e:
         st.error(f"خطأ في الاتصال: {e}")
 
-# ================= 3. دالة الاستخراج الذكي عبر Gemini =================
-def extract_exam_data_via_gemini(image):
+# ================= 3. دالة الاستخراج الذكي عبر Gemini (تدعم صور متعددة) =================
+def extract_exam_data_via_gemini(images_list):
     if not GEMINI_API_KEY:
         st.error("يرجى إعداد GEMINI_API_KEY في إعدادات Secrets الخاصة بـ Streamlit!")
         return None
@@ -130,7 +130,7 @@ def extract_exam_data_via_gemini(image):
         client = genai.Client(api_key=GEMINI_API_KEY)
         prompt = """
         أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل (السادس، الخامس، والرابع الإعدادي). 
-        قم بتحليل الصورة واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
+        قم بتحليل الصور المرفقة (سواء كانت صفحة واحدة أو عدة صفحات لنفس الامتحان) واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
         {
           "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا)",
           "year": "السنة الدراسية (مثال: 2024)",
@@ -147,9 +147,10 @@ def extract_exam_data_via_gemini(image):
           ]
         }
         """
+        contents = [prompt] + images_list
         response = client.models.generate_content(
             model='gemini-3.6-flash',
-            contents=[prompt, image]
+            contents=contents
         )
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(clean_text)
@@ -164,56 +165,89 @@ tab1, tab2 = st.tabs(["📤 رفع وتحليل ورقة امتحانية", "�
 
 # ----------------- التبويب الأول: الرفع والقص والتحسين -----------------
 with tab1:
-    st.subheader("تحليل ورقة امتحانية من صورة واختيار التصنيفات")
-    uploaded_file = st.file_uploader("اختر صورة الورقة الامتحانية", type=["jpg", "jpeg", "png"])
+    st.subheader("تحليل ورقة/أوراق امتحانية واختيار التصنيفات")
     
-    if uploaded_file:
-        raw_img = Image.open(uploaded_file)
-        
+    # السماح برفع ملفات متعددة (صور صفحات الأسئلة)
+    uploaded_files = st.file_uploader("اختر صورة أو عدة صور للأسئلة الامتحانية", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+    
+    if uploaded_files:
         st.markdown("---")
-        st.markdown("### ✂️ قص وتحسين الجزء المطلوب:")
+        st.markdown("### ✂️ قص وتحسين الأجزاء المطلوبة لكل صفحة:")
         
-        col_crop_view, col_result_view = st.columns(2)
+        processed_crops = []
         
-        with col_crop_view:
-            st.info("حدد الجزء المطلوب من الصورة الأصلية:")
-            # نمرر الصورة الأصلية الثابتة لمنع إعادة تعيين المربع عند تحريك السلايدر
-            cropped_img = st_cropper(
-                raw_img, 
-                realtime_update=True, 
-                box_color='#FF0000', 
-                aspect_ratio=None, 
-                key="cropper_tool"
-            )
+        # حقن CSS لمنع تجاوز الحواف في الشاشات الصغيرة للموبايل
+        st.markdown(
+            """
+            <style>
+            .stCropperContainer {
+                max-width: 100% !important;
+                overflow-x: auto !important;
+            }
+            textarea {
+                direction: auto !important;
+                text-align: start !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
+        for i, up_file in enumerate(uploaded_files):
+            raw_img = Image.open(up_file)
             
-        with col_result_view:
-            st.info("📌 التحكم بجودة الجزء المقصوص ومعاينته:")
-            if cropped_img is not None:
-                # إنشاء نسخة مستقلة للتطبيق عليها دون المساس بالأصل
-                processed_crop = cropped_img.copy()
+            with st.expander(f"📱 خيارات العرض والقص للصفحة #{i+1}", expanded=True):
+                resize_factor = st.slider(f"تصغير عرض الصفحة #{i+1} (لحل مشكلة حواف الموبايل)", 0.3, 1.0, 0.8, 0.05, key=f"scale_{i}")
                 
-                # أدوات التعديل الخاصة بالجزء المقصوص فقط
-                with st.expander("🛠️ تحسين جودة الجزء المقصوص (تباين وتدوير)", expanded=True):
-                    c_rot, c_enh = st.columns(2)
-                    with c_rot:
-                        crop_rotation = st.selectbox("تدوير", [0, 90, 180, 270], format_func=lambda x: f"{x}°", key="crop_rot")
-                        if crop_rotation != 0:
-                            processed_crop = processed_crop.rotate(crop_rotation, expand=True)
-                    with c_enh:
-                        crop_contrast = st.slider("مستوى التباين (Contrast)", 0.5, 3.0, 1.0, 0.1, key="crop_contrast")
-                        if crop_contrast != 1.0:
-                            enhancer = ImageEnhance.Contrast(processed_crop)
-                            processed_crop = enhancer.enhance(crop_contrast)
+                if resize_factor < 1.0:
+                    new_w = int(raw_img.width * resize_factor)
+                    new_h = int(raw_img.height * resize_factor)
+                    display_img = raw_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                else:
+                    display_img = raw_img
+
+            col_crop_view, col_result_view = st.columns(2)
+            
+            with col_crop_view:
+                st.info(f"حدد الجزء المطلوب من الصفحة #{i+1}:")
+                cropped_img = st_cropper(
+                    display_img, 
+                    realtime_update=True, 
+                    box_color='#FF0000', 
+                    aspect_ratio=None, 
+                    key=f"cropper_tool_{i}",
+                    box_style="outline",
+                    return_type='image'
+                )
                 
-                # عرض الصورة المقصوصة بعد التعديل
-                st.image(processed_crop, caption="الجزء المقصوص بعد التحسين", use_container_width=True)
-                
-                if st.button("🔍 استخراج البيانات بالذكاء الاصطناعي", type="primary"):
-                    with st.spinner("جاري تحليل الأسئلة واستخراج المحتوى..."):
-                        extracted = extract_exam_data_via_gemini(processed_crop)
-                        if extracted:
-                            st.success("تم التحليل بنجاح! طابق الحقول بالأسفل.")
-                            st.session_state['extracted_data'] = extracted
+            with col_result_view:
+                st.info(f"📌 معاينة وتعديل الصفحة #{i+1}:")
+                if cropped_img is not None:
+                    processed_crop = cropped_img.copy()
+                    
+                    with st.expander(f"🛠️ تباين وتدوير للصفحة #{i+1}", expanded=False):
+                        c_rot, c_enh = st.columns(2)
+                        with c_rot:
+                            crop_rotation = st.selectbox("تدوير", [0, 90, 180, 270], format_func=lambda x: f"{x}°", key=f"crop_rot_{i}")
+                            if crop_rotation != 0:
+                                processed_crop = processed_crop.rotate(crop_rotation, expand=True)
+                        with c_enh:
+                            crop_contrast = st.slider("مستوى التباين", 0.5, 3.0, 1.0, 0.1, key=f"crop_contrast_{i}")
+                            if crop_contrast != 1.0:
+                                enhancer = ImageEnhance.Contrast(processed_crop)
+                                processed_crop = enhancer.enhance(crop_contrast)
+                    
+                    st.image(processed_crop, caption=f"معاينة الجزء المقصوص للصفحة #{i+1}", use_container_width=True)
+                    processed_crops.append(processed_crop)
+            
+            st.markdown("---")
+
+        if processed_crops and st.button("🔍 استخراج البيانات بالذكاء الاصطناعي لجميع الصفحات", type="primary"):
+            with st.spinner("جاري تحليل الصفحات والأسئلة واستخراج المحتوى..."):
+                extracted = extract_exam_data_via_gemini(processed_crops)
+                if extracted:
+                    st.success("تم التحليل بنجاح! طابق الحقول بالأسفل.")
+                    st.session_state['extracted_data'] = extracted
 
     data = st.session_state.get('extracted_data', {})
     
@@ -269,23 +303,9 @@ with tab1:
         with c_q2:
             q_mark = st.text_input("الدرجة", value=q.get("mark", ""), key=f"gen_qmark_{idx}")
         
-        # حقن كود CSS لتوجيه النص تلقائياً (عربي يمين، إنجليزي يسار)
-        st.markdown(
-            """
-            <style>
-            textarea {
-                direction: auto !important;
-                text-align: start !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-        
         q_cnt = st.text_area("نص السؤال", value=q.get("content", ""), height=90, key=f"gen_qcnt_{idx}")
         q_svg = st.text_area("كود SVG للرسم", value=q.get("svg_code", ""), height=70, key=f"gen_qsvg_{idx}")
         
-        # معاينة وتطابق الرسم الهندسي (SVG) بشكل مرئي مباشر
         if q_svg.strip():
             st.markdown("🎨 **معاينة الرسم الهندسي (مطابق للأصل):**")
             components.html(f"<div style='display: flex; justify-content: center; background: white; padding: 10px; border-radius: 5px;'>{q_svg}</div>", height=150, scrolling=True)
@@ -383,23 +403,9 @@ with tab2:
                                                         with col_q2:
                                                             q_mark = st.text_input("الدرجة", value=q.get("mark", ""), key=f"qmark_{exam_id}_{idx}")
                                                         
-                                                        # حقن CSS لتوجيه النص في مجلد العرض أيضاً
-                                                        st.markdown(
-                                                            """
-                                                            <style>
-                                                            textarea {
-                                                                direction: auto !important;
-                                                                text-align: start !important;
-                                                            }
-                                                            </style>
-                                                            """,
-                                                            unsafe_allow_html=True
-                                                        )
-                                                        
                                                         q_cnt = st.text_area("نص السؤال", value=q.get("content", ""), height=90, key=f"qcnt_{exam_id}_{idx}")
                                                         q_svg = st.text_area("كود SVG للرسم", value=q.get("svg_code", ""), height=70, key=f"qsvg_{exam_id}_{idx}")
                                                         
-                                                        # معاينة الرسم الهندسي في المجلدات
                                                         if q_svg.strip():
                                                             st.markdown("🎨 **معاينة الرسم الهندسي (مطابق للأصل):**")
                                                             components.html(f"<div style='display: flex; justify-content: center; background: white; padding: 10px; border-radius: 5px;'>{q_svg}</div>", height=150, scrolling=True)

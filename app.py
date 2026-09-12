@@ -16,8 +16,7 @@ st.set_page_config(
 # جلب المفاتيح من Streamlit Secrets أو البيئة
 SUPABASE_URL = "https://wtmkotentkrqvirvquzn.supabase.co/rest/v1/"  
 SUPABASE_KEY = "sb_publishable_NtDev7qGyAaw0vCNxjRR2w_VoIrmZlG"
-GEMINI_API_KEY = "AQ.Ab8RN6JjlpfYJ_57vdmJ-Lm-J5DDc_lxhpMsAFjhVTBixSxvjg"  
-
+client = genai.Client(api_key="AQ.Ab8RN6KzvpJLTiGzt8K-6kqelmu0OTz7pPvcuL-BoslZlX2UFg")
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",

@@ -14,8 +14,8 @@ st.set_page_config(
 )
 
 # جلب مفاتيح Supabase من الـ Secrets أو ضعها هنا مباشرة إذا أردت
-SUPABASE_URL = "https://wtmkotentkrqvirvquzn.supabase.co/rest/v1/"  
-SUPABASE_KEY = "sb_publishable_NtDev7qGyAaw0vCNxjRR2w_VoIrmZlG"
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 
 # ⚠️ ضع مفتاح Gemini الحقيقي الخاص بك هنا مباشرة لتجنب أخطاء المصادقة
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")

@@ -149,7 +149,7 @@ def extract_exam_data_via_gemini(images_list):
         """
         contents = [prompt] + images_list
         response = client.models.generate_content(
-            model='gemini-3.6-flash',
+            model='gemini-2.5-flash',
             contents=contents
         )
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
@@ -210,14 +210,13 @@ with tab1:
             
             with col_crop_view:
                 st.info(f"حدد الجزء المطلوب من الصفحة #{i+1}:")
+                # تم تصحيح استدعاء st_cropper بحذف المعاملات غير المدعومة
                 cropped_img = st_cropper(
                     display_img, 
                     realtime_update=True, 
                     box_color='#FF0000', 
                     aspect_ratio=None, 
-                    key=f"cropper_tool_{i}",
-                    box_style="outline",
-                    return_type='image'
+                    key=f"cropper_tool_{i}"
                 )
                 
             with col_result_view:

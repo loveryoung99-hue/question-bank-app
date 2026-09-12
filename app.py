@@ -98,7 +98,7 @@ def delete_cloud_exam(exam_id):
 # ================= 3. دالة الاستخراج الذكي عبر Gemini =================
 def extract_exam_data_via_gemini(image):
     if not GEMINI_API_KEY or "ضع_مفتاحك" in GEMINI_API_KEY:
-        st.error("يرجى إدخال GEMINI_API_KEY الصحيح داخل الكود!")
+        st.error("AQ.Ab8RN6KzvpJLTiGzt8K-6kqelmu0OTz7pPvcuL-BoslZlX2UFg")
         return None
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)

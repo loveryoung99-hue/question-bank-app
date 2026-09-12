@@ -125,9 +125,9 @@ def extract_exam_data_via_gemini(image):
           ]
         }
         """
-        # تم ضبط النموذج إلى gemini-2.5-flash المعتمد للعمل بكفاءة
+        # تم التحديث بناءً على طلب النظام لاستخدام النموذج المطلوب
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.6-flash',
             contents=[prompt, image]
         )
         clean_text = response.text.replace("```json", "").replace("```", "").strip()

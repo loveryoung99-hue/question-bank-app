@@ -13,10 +13,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# جلب المفاتيح من Streamlit Secrets أو البيئة
+# جلب مفاتيح Supabase من الـ Secrets أو ضعها هنا مباشرة إذا أردت
 SUPABASE_URL = "https://wtmkotentkrqvirvquzn.supabase.co/rest/v1/"  
 SUPABASE_KEY = "sb_publishable_NtDev7qGyAaw0vCNxjRR2w_VoIrmZlG"
-client = genai.Client(api_key="AQ.Ab8RN6KzvpJLTiGzt8K-6kqelmu0OTz7pPvcuL-BoslZlX2UFg")
+
+# ⚠️ ضع مفتاح Gemini الحقيقي الخاص بك هنا مباشرة لتجنب أخطاء المصادقة
+GEMINI_API_KEY = "AQ.Ab8RN6KzvpJLTiGzt8K-6kqelmu0OTz7pPvcuL-BoslZlX2UFg"
+
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -94,8 +97,8 @@ def delete_cloud_exam(exam_id):
 
 # ================= 3. دالة الاستخراج الذكي عبر Gemini =================
 def extract_exam_data_via_gemini(image):
-    if not GEMINI_API_KEY:
-        st.error("يرجى إدخال GEMINI_API_KEY في إعدادات Secrets!")
+    if not GEMINI_API_KEY or "ضع_مفتاحك" in GEMINI_API_KEY:
+        st.error("يرجى إدخال GEMINI_API_KEY الصحيح داخل الكود!")
         return None
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -132,9 +135,9 @@ st.title("📚 بنك الأسئلة الامتحانية - منصة 99+1")
 
 tab1, tab2 = st.tabs(["📤 رفع وتحليل ورقة امتحانية", "📁 إدارة الأوراق الامتحانية (المجلدات)"])
 
-# ----------------- التبويب الأول: الرفع والقص -----------------
+# ----------------- التبويب الأول: الرفع والقص والتحكم اليدوي -----------------
 with tab1:
-    st.subheader("تحليل ورقة امتحانية من صورة")
+    st.subheader("تحليل ورقة امتحانية من صورة وإدخال البيانات")
     uploaded_file = st.file_uploader("اختر صورة الورقة الامتحانية", type=["jpg", "jpeg", "png"])
     
     if uploaded_file:
@@ -142,27 +145,75 @@ with tab1:
         st.info("💡 يمكنك قص الجزء المطلوب من الصورة لزيادة دقة التحليل:")
         cropped_img = st_cropper(img, realtime_update=True, box_color='#FF0000', aspect_ratio=None)
         
-        if st.button("🔍 استخراج البيانات وحفظها تلقائياً", type="primary"):
+        if st.button("🔍 استخراج البيانات بالذكاء الاصطناعي", type="primary"):
             with st.spinner("جاري تحليل الأسئلة واستخراج المحتوى..."):
                 extracted = extract_exam_data_via_gemini(cropped_img)
                 if extracted:
-                    st.success("تم التحليل بنجاح!")
-                    
-                    exam_record = {
-                        "subject": extracted.get("subject", "غير محدد"),
-                        "year": str(extracted.get("year", "2024")),
-                        "term": extracted.get("term", "الدور الأول"),
-                        "stage": extracted.get("stage", "السادس الاعدادي"),
-                        "branch": extracted.get("branch", "العلمي"),
-                        "questions_data": extracted.get("questions", [])
-                    }
-                    insert_cloud_exam(exam_record)
+                    st.success("تم التحليل بنجاح! مراجعة الحقول بالأسفل:")
+                    st.session_state['extracted_data'] = extracted
+
+    # استرجاع البيانات المؤقتة إن وجدت لعرضها في حقول الإدخال الجانبية/الأساسية
+    data = st.session_state.get('extracted_data', {})
+    
+    st.markdown("---")
+    st.subheader("⚙️ تفاصيل الورقة الامتحانية (الحقول الأساسية):")
+    
+    col_in1, col_in2, col_in3, col_in4, col_in5 = st.columns(5)
+    with col_in1:
+        manual_subject = st.text_input("المادة", value=data.get("subject", ""))
+    with col_in2:
+        manual_year = st.text_input("السنة", value=data.get("year", "2024"))
+    with col_in3:
+        manual_term = st.text_input("الدور", value=data.get("term", "الدور الأول"))
+    with col_in4:
+        manual_stage = st.text_input("المرحلة", value=data.get("stage", "السادس الاعدادي"))
+    with col_in5:
+        manual_branch = st.text_input("الفرع", value=data.get("branch", "العلمي"))
+
+    st.markdown("---")
+    st.subheader("📋 الأسئلة المستخرجة والمعدلة:")
+    
+    q_list = data.get("questions", [])
+    editable_questions = []
+
+    for idx, q in enumerate(q_list):
+        st.markdown(f"**السؤال / الفرع #{idx+1}**")
+        c_q1, c_q2 = st.columns([1, 1])
+        with c_q1:
+            q_num = st.text_input("رقم السؤال", value=q.get("question_number", ""), key=f"gen_qnum_{idx}")
+        with c_q2:
+            q_mark = st.text_input("الدرجة", value=q.get("mark", ""), key=f"gen_qmark_{idx}")
+        
+        q_cnt = st.text_area("نص السؤال", value=q.get("content", ""), height=90, key=f"gen_qcnt_{idx}")
+        q_svg = st.text_area("كود SVG للرسم", value=q.get("svg_code", ""), height=70, key=f"gen_qsvg_{idx}")
+        
+        editable_questions.append({
+            "question_number": q_num,
+            "mark": q_mark,
+            "content": q_cnt,
+            "svg_code": q_svg
+        })
+        st.markdown("---")
+
+    if st.button("💾 حفظ النموذج النهائي في قاعدة البيانات السحابية", type="primary"):
+        if not manual_subject:
+            st.warning("يرجى إدخال اسم المادة على الأقل.")
+        else:
+            final_record = {
+                "subject": manual_subject,
+                "year": manual_year,
+                "term": manual_term,
+                "stage": manual_stage,
+                "branch": manual_branch,
+                "questions_data": editable_questions
+            }
+            insert_cloud_exam(final_record)
 
 # ----------------- التبويب الثاني: العرض الهيكلي للمجلدات -----------------
 with tab2:
     st.subheader("📁 الأوراق الامتحانية (عرض الهيكلية والمجلدات)")
     
-    if st.button("🔄 تحديث البيانات"):
+    if st.button("🔄 تحديث القائمة"):
         st.rerun()
 
     cloud_exams = fetch_cloud_exams()

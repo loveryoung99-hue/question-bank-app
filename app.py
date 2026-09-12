@@ -35,7 +35,6 @@ def clean_supabase_url(url):
 STAGES_LIST = ["السادس الاعدادي", "الخامس الاعدادي", "الرابع الاعدادي"]
 BRANCHES_LIST = ["العلمي", "الأدبي", "المواد المشتركة"]
 
-# تصنيف المواد بناءً على الخيار
 SHARED_SUBJECTS = ["اللغة العربية", "اللغة الإنجليزية", "الاسلامية"]
 SCIENTIFIC_SUBJECTS = ["الرياضيات", "الفيزياء", "الكيمياء", "الأحياء"]
 LITERARY_SUBJECTS = ["التاريخ", "الجغرافيا", "الرياضيات", " الاقتصاد"]
@@ -48,7 +47,7 @@ def get_subjects_for_branch(branch):
         return sorted(SCIENTIFIC_SUBJECTS)
     elif branch == "الأدبي":
         return sorted(LITERARY_SUBJECTS)
-    else:  # المواد المشتركة
+    else:
         return sorted(SHARED_SUBJECTS)
 
 # ================= 2. دوال التعامل مع Supabase =================
@@ -92,7 +91,6 @@ def insert_cloud_exam(exam_record):
         else:
             st.error(f"❌ خطأ في الحفظ (رمز الحالة {res.status_code}):")
             st.code(res.text)
-            st.info(f"الرابط المستخدم: {url}")
     except Exception as e:
         st.error(f"خطأ استثنائي في الاتصال بالسحاب: {e}")
 
@@ -149,7 +147,7 @@ def extract_exam_data_via_gemini(image):
         }
         """
         response = client.models.generate_content(
-            model='gemini-3.6-flash',
+            model='gemini-2.5-flash',
             contents=[prompt, image]
         )
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
@@ -168,12 +166,11 @@ with tab1:
     st.subheader("تحليل ورقة امتحانية من صورة واختيار التصنيفات")
     uploaded_file = st.file_uploader("اختر صورة الورقة الامتحانية", type=["jpg", "jpeg", "png"])
     
-    cropped_img = None
     if uploaded_file:
         img = Image.open(uploaded_file)
         
-        # --- أدوات تحسين جودة الصورة ---
-        with st.expander("🛠️ أدوات تحسين جودة الصورة وتدويرها", expanded=False):
+        # قسم أدوات التحسين والتدوير
+        with st.expander("🛠️ أدوات تحسين جودة الصورة وتدويرها", expanded=True):
             col_rot, col_enh = st.columns(2)
             with col_rot:
                 rotation = st.selectbox("تدوير الصورة", [0, 90, 180, 270], format_func=lambda x: f"{x}°")
@@ -184,19 +181,28 @@ with tab1:
                 if contrast_val != 1.0:
                     enhancer = ImageEnhance.Contrast(img)
                     img = enhancer.enhance(contrast_val)
+
+        st.markdown("---")
+        st.markdown("### ✂️ قص الجزء المطلوب من الصورة:")
         
-        st.info("💡 يمكنك قص الجزء المطلوب من الصورة لزيادة دقة التحليل:")
-        cropped_img = st_cropper(img, realtime_update=True, box_color='#FF0000', aspect_ratio=None)
+        # تقسيم الشاشة: اليمين للقص، اليسار لعرض النتيجة المقصوصة
+        col_crop_view, col_result_view = st.columns(2)
         
-        if st.button("🔍 استخراج البيانات بالذكاء الاصطناعي", type="primary"):
+        with col_crop_view:
+            st.info("قم بتحديد المربع على الجزء المراد تحليله:")
+            cropped_img = st_cropper(img, realtime_update=True, box_color='#FF0000', aspect_ratio=None, key="cropper_tool")
+            
+        with col_result_view:
+            st.info("📌 معاينة الجزء المقصوص وجاهزيته للتحليل:")
             if cropped_img is not None:
-                with st.spinner("جاري تحليل الأسئلة واستخراج المحتوى..."):
-                    extracted = extract_exam_data_via_gemini(cropped_img)
-                    if extracted:
-                        st.success("تم التحليل بنجاح! طابق الحقول بالأسفل.")
-                        st.session_state['extracted_data'] = extracted
-            else:
-                st.warning("يرجى التأكد من تحميل وقص الصورة أولاً.")
+                st.image(cropped_img, caption="الجزء المحدد للتحليل", use_container_width=True)
+                
+                if st.button("🔍 استخراج البيانات بالذكاء الاصطناعي", type="primary"):
+                    with st.spinner("جاري تحليل الأسئلة واستخراج المحتوى..."):
+                        extracted = extract_exam_data_via_gemini(cropped_img)
+                        if extracted:
+                            st.success("تم التحليل بنجاح! طابق الحقول بالأسفل.")
+                            st.session_state['extracted_data'] = extracted
 
     data = st.session_state.get('extracted_data', {})
     

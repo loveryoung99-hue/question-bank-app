@@ -18,7 +18,7 @@ SUPABASE_URL = "https://wtmkotentkrqvirvquzn.supabase.co/rest/v1/"
 SUPABASE_KEY = "sb_publishable_NtDev7qGyAaw0vCNxjRR2w_VoIrmZlG"
 
 # ⚠️ ضع مفتاح Gemini الحقيقي الخاص بك هنا مباشرة لتجنب أخطاء المصادقة
-GEMINI_API_KEY = "AQ.Ab8RN6KzvpJLTiGzt8K-6kqelmu0OTz7pPvcuL-BoslZlX2UFg"
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
 HEADERS = {
     "apikey": SUPABASE_KEY,

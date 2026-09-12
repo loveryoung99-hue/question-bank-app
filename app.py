@@ -167,39 +167,49 @@ with tab1:
     uploaded_file = st.file_uploader("اختر صورة الورقة الامتحانية", type=["jpg", "jpeg", "png"])
     
     if uploaded_file:
-        img = Image.open(uploaded_file)
+        raw_img = Image.open(uploaded_file)
         
-        # قسم أدوات التحسين والتدوير
-        with st.expander("🛠️ أدوات تحسين جودة الصورة وتدويرها", expanded=True):
-            col_rot, col_enh = st.columns(2)
-            with col_rot:
-                rotation = st.selectbox("تدوير الصورة", [0, 90, 180, 270], format_func=lambda x: f"{x}°")
-                if rotation != 0:
-                    img = img.rotate(rotation, expand=True)
-            with col_enh:
-                contrast_val = st.slider("مستوى التباين (Contrast)", 0.5, 2.0, 1.0, 0.1)
-                if contrast_val != 1.0:
-                    enhancer = ImageEnhance.Contrast(img)
-                    img = enhancer.enhance(contrast_val)
-
         st.markdown("---")
-        st.markdown("### ✂️ قص الجزء المطلوب من الصورة:")
+        st.markdown("### ✂️ قص وتحسين الجزء المطلوب:")
         
-        # تقسيم الشاشة: اليمين للقص، اليسار لعرض النتيجة المقصوصة
         col_crop_view, col_result_view = st.columns(2)
         
         with col_crop_view:
-            st.info("قم بتحديد المربع على الجزء المراد تحليله:")
-            cropped_img = st_cropper(img, realtime_update=True, box_color='#FF0000', aspect_ratio=None, key="cropper_tool")
+            st.info("حدد الجزء المطلوب من الصورة الأصلية:")
+            # نمرر الصورة الأصلية الثابتة لمنع إعادة تعيين المربع عند تحريك السلايدر
+            cropped_img = st_cropper(
+                raw_img, 
+                realtime_update=True, 
+                box_color='#FF0000', 
+                aspect_ratio=None, 
+                key="cropper_tool"
+            )
             
         with col_result_view:
-            st.info("📌 معاينة الجزء المقصوص وجاهزيته للتحليل:")
+            st.info("📌 التحكم بجودة الجزء المقصوص ومعاينته:")
             if cropped_img is not None:
-                st.image(cropped_img, caption="الجزء المحدد للتحليل", use_container_width=True)
+                # إنشاء نسخة مستقلة للتطبيق عليها دون المساس بالأصل
+                processed_crop = cropped_img.copy()
+                
+                # أدوات التعديل الخاصة بالجزء المقصوص فقط
+                with st.expander("🛠️ تحسين جودة الجزء المقصوص (تباين وتدوير)", expanded=True):
+                    c_rot, c_enh = st.columns(2)
+                    with c_rot:
+                        crop_rotation = st.selectbox("تدوير", [0, 90, 180, 270], format_func=lambda x: f"{x}°", key="crop_rot")
+                        if crop_rotation != 0:
+                            processed_crop = processed_crop.rotate(crop_rotation, expand=True)
+                    with c_enh:
+                        crop_contrast = st.slider("مستوى التباين (Contrast)", 0.5, 3.0, 1.0, 0.1, key="crop_contrast")
+                        if crop_contrast != 1.0:
+                            enhancer = ImageEnhance.Contrast(processed_crop)
+                            processed_crop = enhancer.enhance(crop_contrast)
+                
+                # عرض الصورة المقصوصة بعد التعديل
+                st.image(processed_crop, caption="الجزء المقصوص بعد التحسين", use_container_width=True)
                 
                 if st.button("🔍 استخراج البيانات بالذكاء الاصطناعي", type="primary"):
                     with st.spinner("جاري تحليل الأسئلة واستخراج المحتوى..."):
-                        extracted = extract_exam_data_via_gemini(cropped_img)
+                        extracted = extract_exam_data_via_gemini(processed_crop)
                         if extracted:
                             st.success("تم التحليل بنجاح! طابق الحقول بالأسفل.")
                             st.session_state['extracted_data'] = extracted

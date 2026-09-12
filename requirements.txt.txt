@@ -1,0 +1,6 @@
+streamlit
+requests
+pandas
+pillow
+google-genai
+streamlit-cropper

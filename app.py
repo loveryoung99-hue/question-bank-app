@@ -18,7 +18,8 @@ st.set_page_config(
 # جلب المفاتيح بأمان تام من Streamlit Secrets
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+# جلب قائمة المفاتيح بدلاً من مفتاح واحد
+GEMINI_KEYS = st.secrets.get("GEMINI_KEYS", [])
 
 HEADERS = {
     "apikey": SUPABASE_KEY,
@@ -137,42 +138,57 @@ def delete_cloud_exam(exam_id):
     except Exception as e:
         st.error(f"خطأ في الاتصال: {e}")
 
-# ================= 3. دالة الاستخراج الذكي عبر Gemini =================
+# ================= 3. دالة الاستخراج الذكي عبر Gemini مع التدوير التلقائي =================
 def extract_exam_data_via_gemini(images_list):
-    if not GEMINI_API_KEY:
-        st.error("يرجى إعداد GEMINI_API_KEY في إعدادات Secrets الخاصة بـ Streamlit!")
+    if not GEMINI_KEYS:
+        st.error("يرجى إعداد قائمة GEMINI_KEYS بشكل صحيح في إعدادات Secrets الخاصة بـ Streamlit!")
         return None
-    try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        prompt = """
-        أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل (السادس، الخامس، والرابع الإعدادي). 
-        قم بتحليل الصور المرفقة حسب ترتيبها الدقيق (الصورة الأولى ثم الصورة الثانية إن وجدت) واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
-        {
-          "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا، الاقتصاد)",
-          "year": "السنة الدراسية (مثال: 2024)",
-          "term": "الدور (مثال: الدور الأول أو الدور الثاني أو الدور الثالث أو تمهيدي)",
-          "stage": "المرحلة (اختر حصراً من: السادس الاعدادي، الخامس الاعدادي، الرابع الاعدادي)",
-          "branch": "الفرع أو القسم (اختر: العلمي أو الأدبي أو المواد المشتركة بناءً على المادة المستخرجة)",
-          "questions": [
-             {
-               "question_number": "رقم السؤال/الفرع (مثال: س1/أ)",
-               "content": "نص السؤال كاملاً",
-               "mark": "الدرجة إن وجدت",
-               "svg_code": "أي رسم هندسي أو توضيحي تحوله لكود SVG إن وجد، وإلا اتركه فارغاً"
-             }
-          ]
-        }
-        """
-        contents = [prompt] + images_list
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=contents
-        )
-        clean_text = response.text.replace("```json", "").replace("```", "").strip()
-        return json.loads(clean_text)
-    except Exception as e:
-        st.error(f"فشل في استخراج البيانات عبر AI: {e}")
-        return None
+
+    prompt = """
+    أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل (السادس، الخامس، والرابع الإعدادي). 
+    قم بتحليل الصور المرفقة حسب ترتيبها الدقيق (الصورة الأولى ثم الصورة الثانية إن وجدت) واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
+    {
+      "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا، الاقتصاد)",
+      "year": "السنة الدراسية (مثال: 2024)",
+      "term": "الدور (مثال: الدور الأول أو الدور الثاني أو الدور الثالث أو تمهيدي)",
+      "stage": "المرحلة (اختر حصراً من: السادس الاعدادي، الخامس الاعدادي، الرابع الاعدادي)",
+      "branch": "الفرع أو القسم (اختر: العلمي أو الأدبي أو المواد المشتركة بناءً على المادة المستخرجة)",
+      "questions": [
+         {
+           "question_number": "رقم السؤال/الفرع (مثال: س1/أ)",
+           "content": "نص السؤال كاملاً",
+           "mark": "الدرجة إن وجدت",
+           "svg_code": "أي رسم هندسي أو توضيحي تحوله لكود SVG إن وجد، وإلا اتركه فارغاً"
+         }
+      ]
+    }
+    """
+    contents = [prompt] + images_list
+
+    # المرور على المفاتيح بالتسلسل
+    for idx, api_key in enumerate(GEMINI_KEYS):
+        try:
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model='gemini-1.5-flash', # تم تصحيح اسم الموديل للأحدث والأسرع
+                contents=contents
+            )
+            clean_text = response.text.replace("```json", "").replace("```", "").strip()
+            return json.loads(clean_text)
+            
+        except Exception as e:
+            err_str = str(e)
+            # إذا كان الخطأ بسبب تجاوز الحد (429) أو استنفاد الحصة، انتقل للمفتاح التالي مباشرة
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                continue
+            else:
+                # إذا كان خطأ غير متوقع، نعرض تحذيراً ونستمر بتجربة باقي المفاتيح
+                st.warning(f"ملاحظة (المفتاح {idx+1}): {e}")
+                continue
+
+    # إذا انتهت الحلقة ولم تنجح أي محاولة
+    st.error("❌ لقد استنفدت حصة جميع مفاتيح الـ API المتاحة لليوم أو حدث خطأ يمنع الاتصال. يرجى المحاولة لاحقاً.")
+    return None
 
 # ================= 4. الواجهة الرئيسية والتنقل =================
 st.title("📚 بنك الأسئلة الامتحانية - منصة 99+1")
@@ -204,7 +220,6 @@ with tab1:
     if pdf_file is not None:
         try:
             pdf_reader = pypdf.PdfReader(pdf_file)
-            # ملاحظة: استخراج الصور من PDF يتطلب مكتبات إضافية، لذا نعتمد تحويل الصفحات أو إتاحة خيار الصور المباشر
             st.info(f"تم رفع ملف PDF بنجاح يحتوي على {len(pdf_reader.pages)} صفحة.")
         except Exception as e:
             st.error(f"قراءة ملف الـ PDF فشلت: {e}")
@@ -229,7 +244,7 @@ with tab1:
                 st.image(img_p, caption=f"الصفحة #{idx+1} (محسنة)", use_container_width=True)
 
         if st.button("🔍 استخراج وتحليل الأسئلة عبر الذكاء الاصطناعي", type="primary"):
-            with st.spinner("جاري قراءة الصفحات وتحليل الأسئلة بدقة..."):
+            with st.spinner("جاري قراءة الصفحات وتحليل الأسئلة بدقة... (قد يستغرق بضع ثوانٍ)"):
                 extracted = extract_exam_data_via_gemini(images_to_process)
                 if extracted:
                     st.success("تم التحليل بنجاح! طابق الحقول بالأسفل.")

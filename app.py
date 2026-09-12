@@ -170,7 +170,7 @@ def extract_exam_data_via_gemini(images_list):
         try:
             client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
-                model='gemini-1.5-flash', # تم تصحيح اسم الموديل للأحدث والأسرع
+                model='gemini-2.0-flash',
                 contents=contents
             )
             clean_text = response.text.replace("```json", "").replace("```", "").strip()

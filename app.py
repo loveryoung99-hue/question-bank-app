@@ -45,34 +45,44 @@ def fetch_cloud_exams():
         res = requests.get(url, headers=HEADERS)
         if res.status_code == 200:
             return res.json()
-        return []
+        else:
+            st.error(f"خطأ جلب البيانات (رمز {res.status_code}): {res.text}")
+            return []
     except Exception as e:
-        st.error(f"خطأ في جلب البيانات: {e}")
+        st.error(f"خطأ في الاتصال: {e}")
         return []
 
 def insert_cloud_exam(exam_record):
     if not SUPABASE_URL or not exam_record:
+        st.error("رابط Supabase غير مفقود أو البيانات فارغة.")
         return
     try:
         base_url = clean_supabase_url(SUPABASE_URL)
         
+        # التأكد من صحة مسار الجدول (تأكد أن اسم الجدول في قاعدة بياناتك هو exam_papers تماماً)
+        table_name = "exam_papers"
+        
         # فحص لمنع تكرار نفس النموذج المرفوع مسبقاً
-        check_url = f"{base_url}/rest/v1/exam_papers?subject=eq.{exam_record['subject']}&year=eq.{exam_record['year']}&term=eq.{exam_record['term']}&stage=eq.{exam_record['stage']}&branch=eq.{exam_record['branch']}"
+        check_url = f"{base_url}/rest/v1/{table_name}?subject=eq.{exam_record['subject']}&year=eq.{exam_record['year']}&term=eq.{exam_record['term']}&stage=eq.{exam_record['stage']}&branch=eq.{exam_record['branch']}"
         check_res = requests.get(check_url, headers=HEADERS)
         
         if check_res.status_code == 200 and len(check_res.json()) > 0:
             st.warning("⚠️ هذه الورقة الامتحانية مخزنة مسبقاً في قاعدة البيانات!")
             return
 
-        url = f"{base_url}/rest/v1/exam_papers"
+        url = f"{base_url}/rest/v1/{table_name}"
         res = requests.post(url, headers=HEADERS, json=exam_record)
+        
         if res.status_code in [200, 201]:
             st.success("✅ تم حفظ الورقة الامتحانية بنجاح!")
             st.rerun()
         else:
-            st.error(f"خطأ في الحفظ: {res.text}")
+            # عرض تفاصيل الخطأ بوضوح لتشخيص المشكلة في حال تطورت
+            st.error(f"❌ خطأ في الحفظ (رمز الحالة {res.status_code}):")
+            st.code(res.text)
+            st.info(f"الرابط المستخدم: {url}")
     except Exception as e:
-        st.error(f"خطأ الاتصال بالسحاب: {e}")
+        st.error(f"خطأ استثنائي في الاتصال بالسحاب: {e}")
 
 def update_cloud_exam(exam_id, updated_record):
     try:
@@ -83,7 +93,7 @@ def update_cloud_exam(exam_id, updated_record):
             st.success("✅ تم تحديث التعديلات بنجاح!")
             st.rerun()
         else:
-            st.error(f"خطأ في التحديث: {res.text}")
+            st.error(f"خطأ في التحديث ({res.status_code}): {res.text}")
     except Exception as e:
         st.error(f"خطأ في الاتصال: {e}")
 
@@ -96,7 +106,7 @@ def delete_cloud_exam(exam_id):
             st.success("🗑️ تم حذف الورقة الامتحانية!")
             st.rerun()
         else:
-            st.error(f"خطأ في الحذف: {res.text}")
+            st.error(f"خطأ في الحذف ({res.status_code}): {res.text}")
     except Exception as e:
         st.error(f"خطأ في الاتصال: {e}")
 
@@ -125,7 +135,6 @@ def extract_exam_data_via_gemini(image):
           ]
         }
         """
-        # تم التحديث بناءً على طلب النظام لاستخدام النموذج المطلوب
         response = client.models.generate_content(
             model='gemini-3.6-flash',
             contents=[prompt, image]
@@ -240,7 +249,7 @@ with tab2:
     cloud_exams = fetch_cloud_exams()
 
     if not cloud_exams:
-        st.info("لا توجد أوراق امتحانية مخزنة حتى الآن.")
+        st.info("لا توجد أوراق امتحانية مخزنة حتى الآن أو لم يتم جلب البيانات.")
     else:
         tree = {}
         for exam in cloud_exams:

@@ -26,18 +26,28 @@ HEADERS = {
 }
 
 def clean_supabase_url(url):
-    # تنظيف المسار لضمان عدم تكرار rest/v1 أو الشرطة المائلة
     url = url.rstrip('/')
     if url.endswith('/rest/v1'):
         url = url[:-8]
     return url.rstrip('/')
 
-# ================= الثوابت والقوائم الثابتة لمنع اختلاف الإدخال =================
-STAGES_LIST = ["السادس الاعدادي", "الثالث المتوسط", "السادس الابتدائي"]
-BRANCHES_LIST = ["العلمي (إحيائي/تطبيقي)", "الأدبي", "العام"]
-SUBJECTS_LIST = ["الرياضيات", "الفيزياء", "الكيمياء", "اللغة الإنجليزية", "اللغة العربية", "الأحياء", "الاسلامية", "الفرنسي"]
-YEARS_LIST = [str(y) for y in range(2026, 2015, -1)]  # من 2026 نزولاً إلى 2016
+# ================= الثوابت المحدثة بناءً على طلبك =================
+STAGES_LIST = ["السادس الاعدادي", "الخامس الاعدادي", "الرابع الاعدادي"]
+BRANCHES_LIST = ["العلمي", "الأدبي"]
+
+# المواد المشتركة والعلمية والأدبية
+SHARED_SUBJECTS = ["اللغة العربية", "اللغة الإنجليزية", "الاسلامية"]
+SCIENTIFIC_SUBJECTS = ["الرياضيات", "الفيزياء", "الكيمياء", "الأحياء"]
+LITERARY_SUBJECTS = ["التاريخ", "الجغرافيا", "الرياضيات", " الاقتصاد"]
+
+YEARS_LIST = [str(y) for y in range(2026, 2015, -1)]
 TERMS_LIST = ["الدور الأول", "الدور الثاني", "الدور الثالث", "تمهيدي"]
+
+def get_subjects_for_branch(branch):
+    if branch == "العلمي":
+        return sorted(list(set(SHARED_SUBJECTS + SCIENTIFIC_SUBJECTS)))
+    else:
+        return sorted(list(set(SHARED_SUBJECTS + LITERARY_SUBJECTS)))
 
 # ================= 2. دوال التعامل مع Supabase =================
 def fetch_cloud_exams():
@@ -64,12 +74,11 @@ def insert_cloud_exam(exam_record):
         base_url = clean_supabase_url(SUPABASE_URL)
         table_name = "exam_papers"
         
-        # فحص لمنع تكرار نفس النموذج المرفوع مسبقاً
         check_url = f"{base_url}/rest/v1/{table_name}?subject=eq.{exam_record['subject']}&year=eq.{exam_record['year']}&term=eq.{exam_record['term']}&stage=eq.{exam_record['stage']}&branch=eq.{exam_record['branch']}"
         check_res = requests.get(check_url, headers=HEADERS)
         
         if check_res.status_code == 200 and len(check_res.json()) > 0:
-            st.warning("⚠️ هذه الورقة الامتحانية مخزنة مسبقاً في قاعدة البيانات!")
+            st.warning("⚠️ هذه الورقة الامتحانية مخزنة مسبقاً في قاعدة البيانات لنفس الفرع!")
             return
 
         url = f"{base_url}/rest/v1/{table_name}"
@@ -119,13 +128,14 @@ def extract_exam_data_via_gemini(image):
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         prompt = """
-        أنت خبير في تحليل الأوراق الامتحانية العراقية. قم بتحليل الصورة واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
+        أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل (السادس، الخامس، والرابع الإعدادي). 
+        قم بتحليل الصورة واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
         {
-          "subject": "اسم المادة (اختر الأقرب مثل: الرياضيات، الفيزياء، الكيمياء، اللغة الإنجليزية، اللغة العربية، الأحياء، الاسلامية، الفرنسي)",
+          "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا)",
           "year": "السنة الدراسية (مثال: 2024)",
           "term": "الدور (مثال: الدور الأول أو الدور الثاني أو الدور الثالث أو تمهيدي)",
-          "stage": "المرحلة (مثال: السادس الاعدادي أو الثالث المتوسط أو السادس الابتدائي)",
-          "branch": "الفرع (مثال: العلمي (إحيائي/تطبيقي) أو الأدبي أو العام)",
+          "stage": "المرحلة (اختر حصراً من: السادس الاعدادي، الخامس الاعدادي، الرابع الاعدادي)",
+          "branch": "الفرع (اختر حصراً من: العلمي أو الأدبي)",
           "questions": [
              {
                "question_number": "رقم السؤال/الفرع (مثال: س1/أ)",
@@ -175,7 +185,7 @@ with tab1:
     data = st.session_state.get('extracted_data', {})
     
     st.markdown("---")
-    st.subheader("⚙️ تحديد تصنيف الورقة الامتحانية (قوائم منسدلة لمنع الأخطاء):")
+    st.subheader("⚙️ تحديد تصنيف الورقة الامتحانية:")
     
     col_in1, col_in2, col_in3, col_in4, col_in5 = st.columns(5)
     
@@ -185,14 +195,21 @@ with tab1:
         selected_stage = st.selectbox("المرحلة", STAGES_LIST, index=default_stage_idx)
         
     with col_in2:
-        ai_branch = data.get("branch", "العلمي (إحيائي/تطبيقي)")
+        ai_branch = data.get("branch", "العلمي")
+        # تنظيف مسماة الفرع إذا جاء بصيغة قديمة
+        if "العلمي" in ai_branch:
+            ai_branch = "العلمي"
+        elif "الأدبي" in ai_branch:
+            ai_branch = "الأدبي"
         default_branch_idx = BRANCHES_LIST.index(ai_branch) if ai_branch in BRANCHES_LIST else 0
         selected_branch = st.selectbox("الفرع", BRANCHES_LIST, index=default_branch_idx)
         
     with col_in3:
+        # جلب المواد المتاحة حسب الفرع المحدد (تتضمن المواد المشتركة تلقائياً)
+        current_branch_subjects = get_subjects_for_branch(selected_branch)
         ai_subject = data.get("subject", "الرياضيات")
-        default_sub_idx = SUBJECTS_LIST.index(ai_subject) if ai_subject in SUBJECTS_LIST else 0
-        selected_subject = st.selectbox("المادة", SUBJECTS_LIST, index=default_sub_idx)
+        default_sub_idx = current_branch_subjects.index(ai_subject) if ai_subject in current_branch_subjects else 0
+        selected_subject = st.selectbox("المادة", current_branch_subjects, index=default_sub_idx)
         
     with col_in4:
         ai_year = str(data.get("year", "2024"))
@@ -255,7 +272,7 @@ with tab2:
         tree = {}
         for exam in cloud_exams:
             stg = exam.get("stage") or "غير محدد"
-            brn = exam.get("branch") or "عام"
+            brn = exam.get("branch") or "العلمي"
             sbj = exam.get("subject") or "غير محدد"
             yr  = str(exam.get("year") or "غير محدد")
             trm = exam.get("term") or "غير محدد"
@@ -283,15 +300,16 @@ with tab2:
                                                     
                                                     c1, c2, c3, c4, c5 = st.columns(5)
                                                     with c1:
-                                                        e_subject = st.selectbox("المادة", SUBJECTS_LIST, index=SUBJECTS_LIST.index(exam.get("subject")) if exam.get("subject") in SUBJECTS_LIST else 0, key=f"sub_{exam_id}")
-                                                    with c2:
-                                                        e_year = st.selectbox("السنة", YEARS_LIST, index=YEARS_LIST.index(str(exam.get("year"))) if str(exam.get("year")) in YEARS_LIST else 0, key=f"yr_{exam_id}")
-                                                    with c3:
-                                                        e_term = st.selectbox("الدور", TERMS_LIST, index=TERMS_LIST.index(exam.get("term")) if exam.get("term") in TERMS_LIST else 0, key=f"tm_{exam_id}")
-                                                    with c4:
                                                         e_stage = st.selectbox("المرحلة", STAGES_LIST, index=STAGES_LIST.index(exam.get("stage")) if exam.get("stage") in STAGES_LIST else 0, key=f"stg_{exam_id}")
-                                                    with c5:
+                                                    with c2:
                                                         e_branch = st.selectbox("الفرع", BRANCHES_LIST, index=BRANCHES_LIST.index(exam.get("branch")) if exam.get("branch") in BRANCHES_LIST else 0, key=f"brn_{exam_id}")
+                                                    with c3:
+                                                        valid_subs = get_subjects_for_branch(e_branch)
+                                                        e_subject = st.selectbox("المادة", valid_subs, index=valid_subs.index(exam.get("subject")) if exam.get("subject") in valid_subs else 0, key=f"sub_{exam_id}")
+                                                    with c4:
+                                                        e_year = st.selectbox("السنة", YEARS_LIST, index=YEARS_LIST.index(str(exam.get("year"))) if str(exam.get("year")) in YEARS_LIST else 0, key=f"yr_{exam_id}")
+                                                    with c5:
+                                                        e_term = st.selectbox("الدور", TERMS_LIST, index=TERMS_LIST.index(exam.get("term")) if exam.get("term") in TERMS_LIST else 0, key=f"tm_{exam_id}")
 
                                                     st.markdown("---")
                                                     st.markdown("### 📋 الأسئلة والمحتوى:")

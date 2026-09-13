@@ -15,6 +15,137 @@ st.set_page_config(
     layout="wide"
 )
 
+# ================= تصميم عملي ومحسّن مع الحفاظ على كامل الوظائف =================
+st.markdown(
+    """
+    <style>
+        :root {
+            --app-bg: #f6f8fc;
+            --surface: #ffffff;
+            --text-main: #162238;
+            --text-muted: #667085;
+            --border: #e4e8f0;
+            --primary: #173b69;
+            --primary-soft: #edf3fb;
+            --accent: #d99328;
+        }
+
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {
+            direction: rtl;
+        }
+
+        .stApp {
+            background: var(--app-bg);
+            color: var(--text-main);
+        }
+
+        .block-container {
+            max-width: 1480px;
+            padding-top: 1.4rem;
+            padding-bottom: 3rem;
+        }
+
+        h1, h2, h3, h4, h5, h6, p, label, div {
+            text-align: right;
+        }
+
+        [data-testid="stSidebar"] {
+            background: var(--surface);
+            border-left: 1px solid var(--border);
+        }
+
+        [data-testid="stSidebar"] > div:first-child {
+            padding-top: 1.2rem;
+        }
+
+        div[data-testid="stTabs"] [data-baseweb="tab-list"] {
+            gap: 0.55rem;
+            background: var(--surface);
+            padding: 0.45rem;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 8px 24px rgba(26, 44, 73, 0.05);
+        }
+
+        div[data-testid="stTabs"] button[data-baseweb="tab"] {
+            flex: 1;
+            min-height: 48px;
+            border-radius: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+        }
+
+        div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
+            background: var(--primary-soft);
+            color: var(--primary);
+        }
+
+        div[data-testid="stFileUploader"] section {
+            background: var(--surface);
+            border: 1.5px dashed #b9c7da;
+            border-radius: 16px;
+            padding: 0.6rem;
+        }
+
+        div[data-baseweb="select"] > div,
+        [data-testid="stTextInput"] input,
+        [data-testid="stTextArea"] textarea {
+            border-radius: 11px !important;
+            border-color: var(--border) !important;
+            background: var(--surface) !important;
+        }
+
+        [data-testid="stExpander"] {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            overflow: hidden;
+            margin-bottom: 0.55rem;
+        }
+
+        [data-testid="stDataFrame"] {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .stButton > button, .stDownloadButton > button {
+            border-radius: 11px;
+            min-height: 42px;
+            font-weight: 700;
+            border: 1px solid var(--border);
+        }
+
+        .stButton > button[kind="primary"],
+        .stDownloadButton > button[kind="primary"] {
+            background: var(--primary);
+            color: #ffffff;
+            border-color: var(--primary);
+        }
+
+        [data-testid="stAlert"] {
+            border-radius: 12px;
+        }
+
+        hr {
+            border-color: var(--border);
+            margin: 1.35rem 0;
+        }
+
+        @media (max-width: 800px) {
+            .block-container {
+                padding-left: 0.75rem;
+                padding-right: 0.75rem;
+            }
+            div[data-testid="stTabs"] button[data-baseweb="tab"] {
+                font-size: 0.82rem;
+            }
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # جلب المفاتيح بأمان تام من Streamlit Secrets
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
@@ -35,9 +166,8 @@ def clean_supabase_url(url):
 
 # ================= الثوابت والمراحل المحددة فقط =================
 STAGES_LIST = [
-    "السادس العلمي", 
-    "السادس الأدبي", 
-    "الثالث المتوسط", 
+    "السادس الإعدادي",
+    "الثالث المتوسط",
     "السادس الابتدائي"
 ]
 
@@ -47,18 +177,36 @@ SHARED_SUBJECTS = ["اللغة العربية", "اللغة الإنجليزية
 SCIENTIFIC_SUBJECTS = ["الرياضيات", "الفيزياء", "الكيمياء", "الأحياء"]
 LITERARY_SUBJECTS = ["التاريخ", "الجغرافيا", "الرياضيات", "الاقتصاد"]
 GENERAL_SUBJECTS = ["الرياضيات", "اللغة العربية", "اللغة الإنجليزية", "الاسلامية", "الاجتماعيات", "العلوم"]
+PREPARATORY_SUBJECTS = sorted(set(SCIENTIFIC_SUBJECTS + LITERARY_SUBJECTS + SHARED_SUBJECTS))
+
+def normalize_stage(stage):
+    stage_text = str(stage or "").strip()
+
+    # دمج التسميات القديمة (العلمي/الأدبي) تحت السادس الإعدادي دون حذف البيانات القديمة.
+    if any(label in stage_text for label in [
+        "السادس العلمي", "السادس الأدبي", "السادس الإعدادي",
+        "السادس الاعدادي", "السادس اعدادي"
+    ]):
+        return "السادس الإعدادي"
+
+    if "الثالث" in stage_text and "المتوسط" in stage_text:
+        return "الثالث المتوسط"
+
+    if "السادس" in stage_text and ("الابتدائي" in stage_text or "ابتدائي" in stage_text):
+        return "السادس الابتدائي"
+
+    return None
 
 def get_subjects_for_stage(stage):
-    if "العلمي" in str(stage):
-        return sorted(SCIENTIFIC_SUBJECTS + SHARED_SUBJECTS)
-    elif "الأدبي" in str(stage):
-        return sorted(LITERARY_SUBJECTS + SHARED_SUBJECTS)
-    elif "الثالث" in str(stage):
+    normalized_stage = normalize_stage(stage) or str(stage)
+    if normalized_stage == "السادس الإعدادي":
+        return PREPARATORY_SUBJECTS
+    elif normalized_stage == "الثالث المتوسط":
         return sorted(GENERAL_SUBJECTS)
-    elif "السادس الابتدائي" in str(stage) or "الابتدائي" in str(stage):
+    elif normalized_stage == "السادس الابتدائي":
         return sorted(GENERAL_SUBJECTS)
     else:
-        return sorted(GENERAL_SUBJECTS + SCIENTIFIC_SUBJECTS + LITERARY_SUBJECTS)
+        return sorted(GENERAL_SUBJECTS)
 
 YEARS_LIST = [str(y) for y in range(2026, 2010, -1)]
 
@@ -145,12 +293,12 @@ def extract_exam_data_via_gemini(images_list):
         return None
 
     prompt = """
-    أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل التالية حصراً: (السادس العلمي، السادس الأدبي، الثالث المتوسط، السادس الابتدائي). 
-    قم بتحليل الصور المرفقة حسب ترتيبها الدقيق واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
+    أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل التالية حصراً: (السادس الإعدادي، الثالث المتوسط، السادس الابتدائي). 
+    قم بتحليل ملف PDF أو الصور المرفقة حسب ترتيبها الدقيق واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
     {
       "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا، الاقتصاد، الاجتماعيات، العلوم)",
       "year": "السنة الدراسية (مثال: 2024)",
-      "stage": "المرحلة (اختر حصراً من: السادس العلمي، السادس الأدبي، الثالث المتوسط، السادس الابتدائي)",
+      "stage": "المرحلة (اختر حصراً من: السادس الإعدادي، الثالث المتوسط، السادس الابتدائي)",
       "term": "الدور (اختر بدقة: الدور الأول أو الدور الثاني أو الدور الثالث، وإذا لم يذكر ضع: الدور الأول)",
       "questions": [
           {
@@ -188,7 +336,9 @@ with st.sidebar:
     cloud_exams_status_check = fetch_cloud_exams()
     uploaded_keys = set()
     for ex in cloud_exams_status_check:
-        stg_val = ex.get('stage') or "أخرى"
+        stg_val = normalize_stage(ex.get('stage'))
+        if not stg_val:
+            continue
         sbj_val = ex.get('subject') or "عام"
         trm_val = ex.get('term') or "الدور الأول"
         uploaded_keys.add(f"{stg_val}_{sbj_val}_{trm_val}")
@@ -200,7 +350,7 @@ with st.sidebar:
             for sbj in subs:
                 for trm in TERMS_LIST:
                     key_str = f"{stg}_{sbj}_{trm}"
-                    is_uploaded = any(key_str in uk or (stg in uk and sbj in uk) for uk in uploaded_keys)
+                    is_uploaded = key_str in uploaded_keys
                     if is_uploaded:
                         stage_table_data.append({
                             "المادة": sbj,
@@ -213,7 +363,15 @@ with st.sidebar:
                 st.dataframe(stage_table_data, use_container_width=True, hide_index=True)
 
 # ================= 5. الواجهة الرئيسية والتنقل =================
-st.title("📚 بنك الأسئلة الامتحانية - منصة 99+1")
+st.markdown(
+    """
+    <div style="background:#ffffff;border:1px solid #e4e8f0;border-radius:18px;padding:20px 22px;margin-bottom:16px;box-shadow:0 10px 28px rgba(26,44,73,.05);">
+        <div style="font-size:1.55rem;font-weight:800;color:#173b69;">📚 بنك الأسئلة الامتحانية — منصة 99+1</div>
+        <div style="margin-top:6px;color:#667085;font-size:.95rem;">رفع وتحليل ومراجعة وإدارة الأوراق الامتحانية من واجهة واحدة.</div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 tab1, tab2, tab3 = st.tabs([
     "📤 رفع وتحليل ورقة امتحانية", 
@@ -240,12 +398,19 @@ with tab1:
         img_file_2 = st.file_uploader("اختر صورة الصفحة الثانية", type=["jpg", "jpeg", "png"], key="img_2")
     
     images_to_process = []
+    pdf_part = None
     
     if pdf_file is not None:
         try:
-            pdf_reader = pypdf.PdfReader(pdf_file)
-            st.info(f"تم رفع ملف PDF بنجاح يحتوي على {len(pdf_reader.pages)} صفحة.")
+            pdf_bytes = pdf_file.getvalue()
+            pdf_reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+            pdf_part = types.Part.from_bytes(
+                data=pdf_bytes,
+                mime_type="application/pdf"
+            )
+            st.success(f"✅ تم تجهيز ملف PDF للتحليل ويحتوي على {len(pdf_reader.pages)} صفحة.")
         except Exception as e:
+            pdf_part = None
             st.error(f"قراءة ملف الـ PDF فشلت: {e}")
 
     if img_file_1:
@@ -266,9 +431,16 @@ with tab1:
             with cols[idx]:
                 st.image(img_p, caption=f"الصفحة #{idx+1} (محسنة)", use_container_width=True)
 
+    has_analysis_input = (pdf_part is not None) or bool(images_to_process)
+    if has_analysis_input:
+        analysis_inputs = []
+        if pdf_part is not None:
+            analysis_inputs.append(pdf_part)
+        analysis_inputs.extend(images_to_process)
+
         if st.button("🔍 استخراج وتحليل الأسئلة عبر الذكاء الاصطناعي", type="primary"):
             with st.spinner("جاري قراءة الصفحات وتحليل الأسئلة بدقة..."):
-                extracted = extract_exam_data_via_gemini(images_to_process)
+                extracted = extract_exam_data_via_gemini(analysis_inputs)
                 if extracted:
                     st.success("تم التحليل بنجاح! طابق الحقول بالأسفل.")
                     st.session_state['extracted_data'] = extracted
@@ -369,17 +541,11 @@ with tab2:
     else:
         tree = {}
         for exam in cloud_exams:
-            stg = exam.get("stage") or "أخرى غير مصنفة"
-            
-            # تصنيف مرن يضمن ظهور البيانات السابقة ضمن المراحل المسموحة بدلاً من إخفائها
-            matched_stage = "السادس العلمي"  # افتراضي افتراضي للسجلات القديمة غير المعرفة تماماً لتظهر ولا تختفي
-            for known_stg in STAGES_LIST:
-                if known_stg in str(stg):
-                    matched_stage = known_stg
-                    break
-            if matched_stage not in STAGES_LIST:
-                # إذا لم تنطبق، نضعها في السادس العلمي افتراضياً أو نتخطاها، لكن الأفضل دمجها بشكل مرن لئلا تفقد شيئاً
-                matched_stage = STAGES_LIST[0]
+            matched_stage = normalize_stage(exam.get("stage"))
+
+            # إظهار المراحل الثلاث المطلوبة فقط. السجلات القديمة للسادس العلمي/الأدبي تندمج تحت السادس الإعدادي.
+            if not matched_stage:
+                continue
 
             sbj = exam.get("subject") or "عام"
             yr  = str(exam.get("year") or "بدون سنة")
@@ -405,7 +571,7 @@ with tab2:
                                             
                                             c1, c2, c3, c4 = st.columns(4)
                                             with c1:
-                                                curr_stg = exam.get("stage", STAGES_LIST[0])
+                                                curr_stg = normalize_stage(exam.get("stage")) or STAGES_LIST[0]
                                                 idx_stg = STAGES_LIST.index(curr_stg) if curr_stg in STAGES_LIST else 0
                                                 e_stage = st.selectbox("المرحلة", STAGES_LIST, index=idx_stg, key=f"stg_{exam_id}")
                                             with c2:

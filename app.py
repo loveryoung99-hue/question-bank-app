@@ -49,16 +49,16 @@ LITERARY_SUBJECTS = ["التاريخ", "الجغرافيا", "الرياضيات
 GENERAL_SUBJECTS = ["الرياضيات", "اللغة العربية", "اللغة الإنجليزية", "الاسلامية", "الاجتماعيات", "العلوم"]
 
 def get_subjects_for_stage(stage):
-    if stage == "السادس العلمي":
+    if "العلمي" in str(stage):
         return sorted(SCIENTIFIC_SUBJECTS + SHARED_SUBJECTS)
-    elif stage == "السادس الأدبي":
+    elif "الأدبي" in str(stage):
         return sorted(LITERARY_SUBJECTS + SHARED_SUBJECTS)
-    elif stage == "الثالث المتوسط":
+    elif "الثالث" in str(stage):
         return sorted(GENERAL_SUBJECTS)
-    elif stage == "السادس الابتدائي":
+    elif "السادس الابتدائي" in str(stage) or "الابتدائي" in str(stage):
         return sorted(GENERAL_SUBJECTS)
     else:
-        return sorted(GENERAL_SUBJECTS)
+        return sorted(GENERAL_SUBJECTS + SCIENTIFIC_SUBJECTS + LITERARY_SUBJECTS)
 
 YEARS_LIST = [str(y) for y in range(2026, 2010, -1)]
 
@@ -98,14 +98,6 @@ def insert_cloud_exam(exam_record):
         base_url = clean_supabase_url(SUPABASE_URL)
         table_name = "exam_papers"
         
-        # التحقق بناءً على المرحلة، المادة، السنة، والدور لمنع التكرار المتطابق
-        check_url = f"{base_url}/rest/v1/{table_name}?subject=eq.{exam_record['subject']}&year=eq.{exam_record['year']}&stage=eq.{exam_record['stage']}&term=eq.{exam_record['term']}"
-        check_res = requests.get(check_url, headers=HEADERS)
-        
-        if check_res.status_code == 200 and len(check_res.json()) > 0:
-            st.warning("⚠️ هذه الورقة الامتحانية مخزنة مسبقاً بنفس (المرحلة، المادة، السنة، والدور)!")
-            return
-
         url = f"{base_url}/rest/v1/{table_name}"
         res = requests.post(url, headers=HEADERS, json=exam_record)
         
@@ -153,13 +145,13 @@ def extract_exam_data_via_gemini(images_list):
         return None
 
     prompt = """
-    أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل التالية حصراً: (السادس العلمي، السادس الأدبي، الثالث المتوسط، السادس الابتدائي). 
+    أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل التالية: (السادس العلمي، السادس الأدبي، الثالث المتوسط، السادس الابتدائي). 
     قم بتحليل الصور المرفقة حسب ترتيبها الدقيق واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
     {
       "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا، الاقتصاد، الاجتماعيات، العلوم)",
       "year": "السنة الدراسية (مثال: 2024)",
-      "stage": "المرحلة (اختر حصراً من: السادس العلمي، السادس الأدبي، الثالث المتوسط، السادس الابتدائي)",
-      "term": "الدور (اختر بدقة إن كان ذُكر في الورقة من بين: الدور الأول، الدور الثاني، الدور الثالث، وإذا لم يذكر ضع افتراضياً: الدور الأول)",
+      "stage": "المرحلة (اختر من: السادس العلمي، السادس الأدبي، الثالث المتوسط، السادس الابتدائي)",
+      "term": "الدور (اختر بدقة: الدور الأول أو الدور الثاني أو الدور الثالث، وإذا لم يذكر ضع: الدور الأول)",
       "questions": [
          {
            "question_number": "رقم السؤال/الفرع (مثال: س1/أ)",
@@ -188,15 +180,18 @@ def extract_exam_data_via_gemini(images_list):
     st.error("❌ فشلت محاولات الاتصال عبر مفاتيح الـ API المتاحة.")
     return None
 
-# ================= 4. الشريط الجانبي (Sidebar) لمتابعة حالة المواد حسب المرحلة =================
+# ================= 4. الشريط الجانبي (Sidebar) لمتابعة حالة المواد =================
 with st.sidebar:
     st.header("📊 حالة المواد المرفوعة")
-    st.markdown("متابعة فورية للمواد المرفوعة للمراحل المعتمدة.")
+    st.markdown("متابعة فورية لكافة المواد المرفوعة.")
     
     cloud_exams_status_check = fetch_cloud_exams()
     uploaded_keys = set()
     for ex in cloud_exams_status_check:
-        uploaded_keys.add(f"{ex.get('stage')}_{ex.get('subject')}_{ex.get('term', 'الدور الأول')}")
+        stg_val = ex.get('stage') or "أخرى"
+        sbj_val = ex.get('subject') or "عام"
+        trm_val = ex.get('term') or "الدور الأول"
+        uploaded_keys.add(f"{stg_val}_{sbj_val}_{trm_val}")
 
     for stg in STAGES_LIST:
         with st.expander(f"📌 {stg}", expanded=False):
@@ -205,7 +200,8 @@ with st.sidebar:
             for sbj in subs:
                 for trm in TERMS_LIST:
                     key_str = f"{stg}_{sbj}_{trm}"
-                    is_uploaded = key_str in uploaded_keys
+                    # التحقق المرن أيضا في الشريط الجانبي
+                    is_uploaded = any(key_str in uk or (stg in uk and sbj in uk) for uk in uploaded_keys)
                     if is_uploaded:
                         stage_table_data.append({
                             "المادة": sbj,
@@ -213,7 +209,7 @@ with st.sidebar:
                             "الحالة": "🟢 مرفوع"
                         })
             if not stage_table_data:
-                st.info("لا توجد مواد مرفوعة لهذه المرحلة بعد.")
+                st.info("لا توجد مواد مرفوعة مسجلة بدقة لهذه المرحلة.")
             else:
                 st.dataframe(stage_table_data, use_container_width=True, hide_index=True)
 
@@ -287,17 +283,21 @@ with tab1:
     
     with col_in1:
         ai_stage = data.get("stage", "السادس العلمي")
-        if ai_stage not in STAGES_LIST:
-            ai_stage = "السادس العلمي"
-        default_stage_idx = STAGES_LIST.index(ai_stage)
+        default_stage_idx = 0
+        for i, s in enumerate(STAGES_LIST):
+            if s in str(ai_stage):
+                default_stage_idx = i
+                break
         selected_stage = st.selectbox("المرحلة", STAGES_LIST, index=default_stage_idx)
         
     with col_in2:
         current_stage_subjects = get_subjects_for_stage(selected_stage)
         ai_subject = data.get("subject", current_stage_subjects[0])
-        if ai_subject not in current_stage_subjects:
-            ai_subject = current_stage_subjects[0]
-        default_sub_idx = current_stage_subjects.index(ai_subject)
+        default_sub_idx = 0
+        for i, sub in enumerate(current_stage_subjects):
+            if sub in str(ai_subject):
+                default_sub_idx = i
+                break
         selected_subject = st.selectbox("المادة", current_stage_subjects, index=default_sub_idx)
         
     with col_in3:
@@ -307,9 +307,11 @@ with tab1:
 
     with col_in4:
         ai_term = data.get("term", "الدور الأول")
-        if ai_term not in TERMS_LIST:
-            ai_term = "الدور الأول"
-        default_term_idx = TERMS_LIST.index(ai_term)
+        default_term_idx = 0
+        for i, t in enumerate(TERMS_LIST):
+            if t in str(ai_term):
+                default_term_idx = i
+                break
         selected_term = st.selectbox("الدور", TERMS_LIST, index=default_term_idx)
 
     st.markdown("---")
@@ -352,34 +354,44 @@ with tab1:
         }
         insert_cloud_exam(final_record)
 
-# ----------------- التبويب الثاني: العرض الهيكلي للمجلدات -----------------
+# ----------------- التبويب الثاني: العرض الهيكلي للمجلدات (تم جعل العرض مرناً وشاملاً للقديم والجديد) -----------------
 with tab2:
     st.subheader("📁 الأوراق الامتحانية (عرض الهيكلية والمجلدات)")
     
-    if st.button("🔄 تحديث القائمة"):
-        st.rerun()
+    col_r1, col_r2 = st.columns([1, 4])
+    with col_r1:
+        if st.button("🔄 تحديث القائمة"):
+            st.rerun()
 
     cloud_exams = fetch_cloud_exams()
 
     if not cloud_exams:
-        st.info("لا توجد أوراق امتحانية مخزنة حتى الآن.")
+        st.info("لا توجد أوراق امتحانية مخزنة حتى الآن في قاعدة البيانات.")
     else:
         tree = {}
         for exam in cloud_exams:
-            stg = exam.get("stage") or "غير محدد"
-            if stg not in STAGES_LIST:
-                continue 
-            sbj = exam.get("subject") or "غير محدد"
-            yr  = str(exam.get("year") or "غير محدد")
+            stg = exam.get("stage") or "أخرى غير مصنفة"
+            
+            # تصنيف مرن للمراحل لضمان عدم ضياع أي سجل قديم
+            matched_stage = "أخرى غير مصنفة"
+            for known_stg in STAGES_LIST:
+                if known_stg in str(stg):
+                    matched_stage = known_stg
+                    break
+            if matched_stage == "أخرى غير مصنفة" and stg in STAGES_LIST:
+                matched_stage = stg
+
+            sbj = exam.get("subject") or "عام"
+            yr  = str(exam.get("year") or "بدون سنة")
             trm = exam.get("term") or "الدور الأول"
 
-            tree.setdefault(stg, {})\
+            tree.setdefault(matched_stage, {})\
                 .setdefault(sbj, {})\
                 .setdefault(yr, {})\
                 .setdefault(trm, []).append(exam)
 
         for stg_name, subjects in tree.items():
-            with st.expander(f"🎓 مجلد المرحلة: **{stg_name}**", expanded=False):
+            with st.expander(f"🎓 مجلد المرحلة: **{stg_name}**", expanded=True):
                 for sbj_name, years in subjects.items():
                     with st.expander(f"📚 المادة: **{sbj_name}**", expanded=False):
                         for yr_name, terms in years.items():
@@ -393,20 +405,22 @@ with tab2:
                                             
                                             c1, c2, c3, c4 = st.columns(4)
                                             with c1:
-                                                e_stage = st.selectbox("المرحلة", STAGES_LIST, index=STAGES_LIST.index(exam.get("stage")) if exam.get("stage") in STAGES_LIST else 0, key=f"stg_{exam_id}")
+                                                curr_stg = exam.get("stage", STAGES_LIST[0])
+                                                idx_stg = STAGES_LIST.index(curr_stg) if curr_stg in STAGES_LIST else 0
+                                                e_stage = st.selectbox("المرحلة", STAGES_LIST, index=idx_stg, key=f"stg_{exam_id}")
                                             with c2:
                                                 valid_subs = get_subjects_for_stage(e_stage)
-                                                current_sub = exam.get("subject")
-                                                if current_sub not in valid_subs:
-                                                    current_sub = valid_subs[0]
-                                                e_subject = st.selectbox("المادة", valid_subs, index=valid_subs.index(current_sub), key=f"sub_{exam_id}")
+                                                curr_sub = exam.get("subject", valid_subs[0])
+                                                idx_sub = valid_subs.index(curr_sub) if curr_sub in valid_subs else 0
+                                                e_subject = st.selectbox("المادة", valid_subs, index=idx_sub, key=f"sub_{exam_id}")
                                             with c3:
-                                                e_year = st.selectbox("السنة", YEARS_LIST, index=YEARS_LIST.index(str(exam.get("year"))) if str(exam.get("year")) in YEARS_LIST else 0, key=f"yr_{exam_id}")
+                                                curr_yr = str(exam.get("year", YEARS_LIST[0]))
+                                                idx_yr = YEARS_LIST.index(curr_yr) if curr_yr in YEARS_LIST else 0
+                                                e_year = st.selectbox("السنة", YEARS_LIST, index=idx_yr, key=f"yr_{exam_id}")
                                             with c4:
-                                                current_trm = exam.get("term", "الدور الأول")
-                                                if current_trm not in TERMS_LIST:
-                                                    current_trm = TERMS_LIST[0]
-                                                e_term = st.selectbox("الدور", TERMS_LIST, index=TERMS_LIST.index(current_trm), key=f"trm_{exam_id}")
+                                                curr_trm = exam.get("term", TERMS_LIST[0])
+                                                idx_trm = TERMS_LIST.index(curr_trm) if curr_trm in TERMS_LIST else 0
+                                                e_term = st.selectbox("الدور", TERMS_LIST, index=idx_trm, key=f"trm_{exam_id}")
 
                                             st.markdown("---")
                                             st.markdown("### 📋 الأسئلة والمحتوى:")

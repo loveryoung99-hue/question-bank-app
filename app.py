@@ -173,11 +173,14 @@ STAGES_LIST = [
 
 TERMS_LIST = ["الدور الأول", "الدور الثاني", "الدور الثالث"]
 
+# السادس الإعدادي مقسّم إلى علمي / أدبي / مواد مشتركة لمنع أي تضارب، خصوصاً الرياضيات.
+PREPARATORY_BRANCHES = ["العلمي", "الأدبي", "مشترك"]
 SHARED_SUBJECTS = ["اللغة العربية", "اللغة الإنجليزية", "الاسلامية"]
 SCIENTIFIC_SUBJECTS = ["الرياضيات", "الفيزياء", "الكيمياء", "الأحياء"]
-LITERARY_SUBJECTS = ["التاريخ", "الجغرافيا", "الرياضيات", "الاقتصاد"]
+LITERARY_SUBJECTS = ["الرياضيات", "الاقتصاد", "الجغرافيا", "التاريخ"]
 GENERAL_SUBJECTS = ["الرياضيات", "اللغة العربية", "اللغة الإنجليزية", "الاسلامية", "الاجتماعيات", "العلوم"]
 PREPARATORY_SUBJECTS = sorted(set(SCIENTIFIC_SUBJECTS + LITERARY_SUBJECTS + SHARED_SUBJECTS))
+
 
 def normalize_stage(stage):
     stage_text = str(stage or "").strip()
@@ -197,16 +200,72 @@ def normalize_stage(stage):
 
     return None
 
-def get_subjects_for_stage(stage):
+
+def normalize_branch(stage, branch=None, subject=None):
+    """توحيد الفرع مع دعم السجلات القديمة ومنع خلط رياضيات العلمي بالأدبي."""
+    normalized_stage = normalize_stage(stage)
+    if normalized_stage != "السادس الإعدادي":
+        return "عام"
+
+    stage_text = str(stage or "").strip()
+    branch_text = str(branch or "").strip()
+    subject_text = str(subject or "").strip()
+
+    # أولوية لتسمية المرحلة القديمة لأنها تحسم العلمي/الأدبي حتى لو branch كان "عام".
+    if "العلمي" in stage_text:
+        return "العلمي"
+    if "الأدبي" in stage_text or "الادبي" in stage_text:
+        return "الأدبي"
+
+    if branch_text in PREPARATORY_BRANCHES:
+        return branch_text
+    if "علمي" in branch_text:
+        return "العلمي"
+    if "أدبي" in branch_text or "ادبي" in branch_text:
+        return "الأدبي"
+    if "مشترك" in branch_text:
+        return "مشترك"
+
+    # المواد المشتركة يمكن حسمها بأمان حتى في السجلات القديمة.
+    if subject_text in SHARED_SUBJECTS:
+        return "مشترك"
+
+    # المواد غير المتداخلة تحسم الفرع تلقائياً.
+    if subject_text in ["الفيزياء", "الكيمياء", "الأحياء"]:
+        return "العلمي"
+    if subject_text in ["الاقتصاد", "الجغرافيا", "التاريخ"]:
+        return "الأدبي"
+
+    # الرياضيات لا يمكن تخمين فرعها بأمان إن لم تكن المعلومة مخزنة.
+    return "غير محدد"
+
+
+def get_branches_for_stage(stage):
     normalized_stage = normalize_stage(stage) or str(stage)
     if normalized_stage == "السادس الإعدادي":
+        return PREPARATORY_BRANCHES
+    return ["عام"]
+
+
+def get_subjects_for_stage(stage, branch=None):
+    normalized_stage = normalize_stage(stage) or str(stage)
+
+    if normalized_stage == "السادس الإعدادي":
+        if branch == "العلمي":
+            return SCIENTIFIC_SUBJECTS
+        if branch == "الأدبي":
+            return LITERARY_SUBJECTS
+        if branch == "مشترك":
+            return SHARED_SUBJECTS
+        # عند عرض "الكل" أو سجل قديم غير محدد نعرض الاتحاد فقط.
         return PREPARATORY_SUBJECTS
-    elif normalized_stage == "الثالث المتوسط":
+
+    if normalized_stage == "الثالث المتوسط":
         return sorted(GENERAL_SUBJECTS)
-    elif normalized_stage == "السادس الابتدائي":
+    if normalized_stage == "السادس الابتدائي":
         return sorted(GENERAL_SUBJECTS)
-    else:
-        return sorted(GENERAL_SUBJECTS)
+    return sorted(GENERAL_SUBJECTS)
+
 
 YEARS_LIST = [str(y) for y in range(2026, 2010, -1)]
 
@@ -293,12 +352,20 @@ def extract_exam_data_via_gemini(images_list):
         return None
 
     prompt = """
-    أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل التالية حصراً: (السادس الإعدادي، الثالث المتوسط، السادس الابتدائي). 
+    أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل التالية حصراً: (السادس الإعدادي، الثالث المتوسط، السادس الابتدائي).
+
+    مهم جداً في السادس الإعدادي:
+    - الفرع العلمي: الرياضيات، الفيزياء، الكيمياء، الأحياء.
+    - الفرع الأدبي: الرياضيات، الاقتصاد، الجغرافيا، التاريخ.
+    - المواد المشتركة بين العلمي والأدبي: الاسلامية، اللغة العربية، اللغة الإنجليزية، ويجب إرجاع branch = "مشترك" لها.
+    - مادة الرياضيات موجودة بنسختين مختلفتين: رياضيات العلمي ورياضيات الأدبي، لذلك لا يجوز اعتبارهما مادة واحدة. استخرج الفرع من عنوان الورقة أو محتواها بدقة.
+
     قم بتحليل ملف PDF أو الصور المرفقة حسب ترتيبها الدقيق واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
     {
       "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا، الاقتصاد، الاجتماعيات، العلوم)",
       "year": "السنة الدراسية (مثال: 2024)",
       "stage": "المرحلة (اختر حصراً من: السادس الإعدادي، الثالث المتوسط، السادس الابتدائي)",
+      "branch": "للسادس الإعدادي اختر حصراً: العلمي أو الأدبي أو مشترك. للمراحل الأخرى ضع: عام",
       "term": "الدور (اختر بدقة: الدور الأول أو الدور الثاني أو الدور الثالث، وإذا لم يذكر ضع: الدور الأول)",
       "questions": [
           {
@@ -331,21 +398,22 @@ def extract_exam_data_via_gemini(images_list):
 # ================= 4. الشريط الجانبي (Sidebar) لمتابعة حالة الرفع =================
 with st.sidebar:
     st.header("📊 متابعة الرفع")
-    st.markdown("اعرف بسرعة شنو مرفوع وشنو باقي حسب المرحلة والسنة والدور.")
+    st.markdown("اعرف بسرعة شنو مرفوع وشنو باقي حسب المرحلة والفرع والسنة والدور.")
 
     cloud_exams_status_check = fetch_cloud_exams()
 
-    # المفتاح الآن يشمل السنة حتى تكون حالة الرفع دقيقة لكل سنة ودور.
+    # المفتاح يشمل المرحلة + الفرع + المادة + السنة + الدور لمنع أي تضارب.
     uploaded_keys = set()
     for ex in cloud_exams_status_check:
         stg_val = normalize_stage(ex.get('stage'))
         if not stg_val:
             continue
         sbj_val = ex.get('subject') or "عام"
+        br_val = normalize_branch(ex.get('stage'), ex.get('branch'), sbj_val)
         yr_val = str(ex.get('year') or "").strip()
         trm_val = ex.get('term') or "الدور الأول"
         if yr_val:
-            uploaded_keys.add((stg_val, sbj_val, yr_val, trm_val))
+            uploaded_keys.add((stg_val, br_val, sbj_val, yr_val, trm_val))
 
     # فلاتر المتابعة
     filter_stage = st.selectbox(
@@ -354,13 +422,26 @@ with st.sidebar:
         key="status_filter_stage"
     )
 
+    if filter_stage == "السادس الإعدادي":
+        filter_branch = st.selectbox(
+            "الفرع",
+            ["الكل"] + PREPARATORY_BRANCHES,
+            key="status_filter_branch"
+        )
+    else:
+        filter_branch = "عام"
+
     filter_year = st.selectbox(
         "السنة",
-        YEARS_LIST,
+        ["كل السنوات"] + YEARS_LIST,
         key="status_filter_year"
     )
 
-    available_subjects = get_subjects_for_stage(filter_stage)
+    if filter_stage == "السادس الإعدادي" and filter_branch != "الكل":
+        available_subjects = get_subjects_for_stage(filter_stage, filter_branch)
+    else:
+        available_subjects = get_subjects_for_stage(filter_stage)
+
     filter_subject = st.selectbox(
         "المادة",
         ["الكل"] + available_subjects,
@@ -381,21 +462,32 @@ with st.sidebar:
 
     sort_mode = st.selectbox(
         "الترتيب",
-        ["الباقي أولاً", "المرفوع أولاً", "حسب المادة", "حسب الدور"],
+        ["الباقي أولاً", "المرفوع أولاً", "حسب السنة", "حسب المادة", "حسب الدور"],
         key="status_sort_mode"
     )
 
-    # حساب تقدم الرفع للمرحلة والسنة المحددتين بالكامل، قبل تطبيق فلاتر المادة/الدور/الحالة.
+    years_to_show = YEARS_LIST if filter_year == "كل السنوات" else [filter_year]
+
+    if filter_stage == "السادس الإعدادي":
+        branches_to_show = PREPARATORY_BRANCHES if filter_branch == "الكل" else [filter_branch]
+    else:
+        branches_to_show = ["عام"]
+
+    # حساب حالة الرفع لكل سنة/فرع/مادة/دور بدقة.
     full_status_rows = []
-    for sbj in available_subjects:
-        for trm in TERMS_LIST:
-            is_uploaded = (filter_stage, sbj, filter_year, trm) in uploaded_keys
-            full_status_rows.append({
-                "المادة": sbj,
-                "السنة": filter_year,
-                "الدور": trm,
-                "الحالة": "🟢 مرفوع" if is_uploaded else "🔴 باقي"
-            })
+    for yr in years_to_show:
+        for br in branches_to_show:
+            subjects_for_branch = get_subjects_for_stage(filter_stage, br)
+            for sbj in subjects_for_branch:
+                for trm in TERMS_LIST:
+                    is_uploaded = (filter_stage, br, sbj, yr, trm) in uploaded_keys
+                    full_status_rows.append({
+                        "الفرع": br if filter_stage == "السادس الإعدادي" else "—",
+                        "المادة": sbj,
+                        "السنة": yr,
+                        "الدور": trm,
+                        "الحالة": "🟢 مرفوع" if is_uploaded else "🔴 باقي"
+                    })
 
     total_items = len(full_status_rows)
     uploaded_count = sum(1 for row in full_status_rows if row["الحالة"] == "🟢 مرفوع")
@@ -403,7 +495,11 @@ with st.sidebar:
     progress_value = (uploaded_count / total_items) if total_items else 0.0
 
     st.markdown("---")
-    st.markdown(f"**التقدم — {filter_stage} / {filter_year}**")
+    progress_label = f"**التقدم — {filter_stage}"
+    if filter_stage == "السادس الإعدادي" and filter_branch != "الكل":
+        progress_label += f" / {filter_branch}"
+    progress_label += f" / {filter_year}**"
+    st.markdown(progress_label)
     st.progress(progress_value)
 
     m1, m2 = st.columns(2)
@@ -425,29 +521,51 @@ with st.sidebar:
 
     # ترتيب عملي لمعرفة النواقص أولاً أو حسب رغبة المستخدم.
     term_order = {term: idx for idx, term in enumerate(TERMS_LIST)}
+    branch_order = {"العلمي": 0, "الأدبي": 1, "مشترك": 2, "—": 3}
     status_order_remaining_first = {"🔴 باقي": 0, "🟢 مرفوع": 1}
     status_order_uploaded_first = {"🟢 مرفوع": 0, "🔴 باقي": 1}
+
+    def year_sort_value(row):
+        try:
+            return -int(row["السنة"])
+        except Exception:
+            return 0
 
     if sort_mode == "الباقي أولاً":
         stage_table_data.sort(key=lambda row: (
             status_order_remaining_first.get(row["الحالة"], 9),
+            year_sort_value(row),
+            branch_order.get(row["الفرع"], 9),
             row["المادة"],
             term_order.get(row["الدور"], 9)
         ))
     elif sort_mode == "المرفوع أولاً":
         stage_table_data.sort(key=lambda row: (
             status_order_uploaded_first.get(row["الحالة"], 9),
+            year_sort_value(row),
+            branch_order.get(row["الفرع"], 9),
+            row["المادة"],
+            term_order.get(row["الدور"], 9)
+        ))
+    elif sort_mode == "حسب السنة":
+        stage_table_data.sort(key=lambda row: (
+            year_sort_value(row),
+            branch_order.get(row["الفرع"], 9),
             row["المادة"],
             term_order.get(row["الدور"], 9)
         ))
     elif sort_mode == "حسب الدور":
         stage_table_data.sort(key=lambda row: (
             term_order.get(row["الدور"], 9),
+            year_sort_value(row),
+            branch_order.get(row["الفرع"], 9),
             row["المادة"]
         ))
     else:
         stage_table_data.sort(key=lambda row: (
             row["المادة"],
+            branch_order.get(row["الفرع"], 9),
+            year_sort_value(row),
             term_order.get(row["الدور"], 9)
         ))
 
@@ -459,7 +577,7 @@ with st.sidebar:
             stage_table_data,
             use_container_width=True,
             hide_index=True,
-            height=min(560, 38 + (len(stage_table_data) * 35))
+            height=min(620, 38 + (len(stage_table_data) * 35))
         )
 
 # ================= 5. الواجهة الرئيسية والتنقل =================
@@ -549,20 +667,27 @@ with tab1:
     
     st.markdown("---")
     st.subheader("⚙️ تحديد تصنيف الورقة الامتحانية:")
-    
-    col_in1, col_in2, col_in3, col_in4 = st.columns(4)
-    
+
+    col_in1, col_in2, col_in3, col_in4, col_in5 = st.columns(5)
+
     with col_in1:
         ai_stage = data.get("stage", STAGES_LIST[0])
-        default_stage_idx = 0
-        for i, s in enumerate(STAGES_LIST):
-            if s in str(ai_stage):
-                default_stage_idx = i
-                break
+        normalized_ai_stage = normalize_stage(ai_stage) or str(ai_stage)
+        default_stage_idx = STAGES_LIST.index(normalized_ai_stage) if normalized_ai_stage in STAGES_LIST else 0
         selected_stage = st.selectbox("المرحلة", STAGES_LIST, index=default_stage_idx)
-        
+
     with col_in2:
-        current_stage_subjects = get_subjects_for_stage(selected_stage)
+        if selected_stage == "السادس الإعدادي":
+            ai_subject_for_branch = data.get("subject", "")
+            ai_branch = normalize_branch(ai_stage, data.get("branch"), ai_subject_for_branch)
+            default_branch_idx = PREPARATORY_BRANCHES.index(ai_branch) if ai_branch in PREPARATORY_BRANCHES else 0
+            selected_branch = st.selectbox("الفرع", PREPARATORY_BRANCHES, index=default_branch_idx)
+        else:
+            selected_branch = "عام"
+            st.text_input("الفرع", value="عام", disabled=True)
+
+    with col_in3:
+        current_stage_subjects = get_subjects_for_stage(selected_stage, selected_branch)
         ai_subject = data.get("subject", current_stage_subjects[0])
         default_sub_idx = 0
         for i, sub in enumerate(current_stage_subjects):
@@ -570,13 +695,13 @@ with tab1:
                 default_sub_idx = i
                 break
         selected_subject = st.selectbox("المادة", current_stage_subjects, index=default_sub_idx)
-        
-    with col_in3:
+
+    with col_in4:
         ai_year = str(data.get("year", "2024"))
         default_yr_idx = YEARS_LIST.index(ai_year) if ai_year in YEARS_LIST else 0
         selected_year = st.selectbox("السنة", YEARS_LIST, index=default_yr_idx)
 
-    with col_in4:
+    with col_in5:
         ai_term = data.get("term", TERMS_LIST[0])
         default_term_idx = 0
         for i, t in enumerate(TERMS_LIST):
@@ -620,15 +745,15 @@ with tab1:
             "year": selected_year,
             "stage": selected_stage,
             "term": selected_term,  # عامود مستقل للدور
-            "branch": "عام",
+            "branch": selected_branch,
             "questions_data": editable_questions
         }
         insert_cloud_exam(final_record)
 
-# ----------------- التبويب الثاني: العرض الهيكلي للمجلدات (مع تطابق مرن للملفات السابقة والجديدة) -----------------
+# ----------------- التبويب الثاني: العرض الهيكلي للمجلدات (مع فصل فرعي السادس الإعدادي) -----------------
 with tab2:
     st.subheader("📁 الأوراق الامتحانية (عرض الهيكلية والمجلدات)")
-    
+
     col_r1, col_r2 = st.columns([1, 4])
     with col_r1:
         if st.button("🔄 تحديث القائمة"):
@@ -643,96 +768,124 @@ with tab2:
         for exam in cloud_exams:
             matched_stage = normalize_stage(exam.get("stage"))
 
-            # إظهار المراحل الثلاث المطلوبة فقط. السجلات القديمة للسادس العلمي/الأدبي تندمج تحت السادس الإعدادي.
+            # إظهار المراحل الثلاث المطلوبة فقط.
             if not matched_stage:
                 continue
 
             sbj = exam.get("subject") or "عام"
-            yr  = str(exam.get("year") or "بدون سنة")
+            br = normalize_branch(exam.get("stage"), exam.get("branch"), sbj)
+            yr = str(exam.get("year") or "بدون سنة")
             trm = exam.get("term") or "الدور الأول"
 
             tree.setdefault(matched_stage, {})\
+                .setdefault(br, {})\
                 .setdefault(sbj, {})\
                 .setdefault(yr, {})\
                 .setdefault(trm, []).append(exam)
 
-        for stg_name, subjects in tree.items():
+        for stg_name, branches in tree.items():
             with st.expander(f"🎓 مجلد المرحلة: **{stg_name}**", expanded=True):
-                for sbj_name, years in subjects.items():
-                    with st.expander(f"📚 المادة: **{sbj_name}**", expanded=False):
-                        for yr_name, terms in years.items():
-                            with st.expander(f"📅 سنة: **{yr_name}**", expanded=False):
-                                for trm_name, exams_list in terms.items():
-                                    for exam in exams_list:
-                                        exam_id = exam.get("id")
-                                        
-                                        with st.expander(f"📌 **{trm_name}** (انقر للتعديل أو العرض)", expanded=True):
-                                            st.markdown("#### ✏️ تعديل بيانات الورقة:")
-                                            
-                                            c1, c2, c3, c4 = st.columns(4)
-                                            with c1:
-                                                curr_stg = normalize_stage(exam.get("stage")) or STAGES_LIST[0]
-                                                idx_stg = STAGES_LIST.index(curr_stg) if curr_stg in STAGES_LIST else 0
-                                                e_stage = st.selectbox("المرحلة", STAGES_LIST, index=idx_stg, key=f"stg_{exam_id}")
-                                            with c2:
-                                                valid_subs = get_subjects_for_stage(e_stage)
-                                                curr_sub = exam.get("subject", valid_subs[0])
-                                                idx_sub = valid_subs.index(curr_sub) if curr_sub in valid_subs else 0
-                                                e_subject = st.selectbox("المادة", valid_subs, index=idx_sub, key=f"sub_{exam_id}")
-                                            with c3:
-                                                curr_yr = str(exam.get("year", YEARS_LIST[0]))
-                                                idx_yr = YEARS_LIST.index(curr_yr) if curr_yr in YEARS_LIST else 0
-                                                e_year = st.selectbox("السنة", YEARS_LIST, index=idx_yr, key=f"yr_{exam_id}")
-                                            with c4:
-                                                curr_trm = exam.get("term", TERMS_LIST[0])
-                                                idx_trm = TERMS_LIST.index(curr_trm) if curr_trm in TERMS_LIST else 0
-                                                e_term = st.selectbox("الدور", TERMS_LIST, index=idx_trm, key=f"trm_{exam_id}")
+                for br_name, subjects in branches.items():
+                    # في السادس الإعدادي يظهر الفرع كمستوى مستقل لمنع خلط العلمي بالأدبي.
+                    if stg_name == "السادس الإعدادي":
+                        branch_container = st.expander(f"🧭 الفرع: **{br_name}**", expanded=False)
+                    else:
+                        branch_container = st.container()
 
-                                            st.markdown("---")
-                                            st.markdown("### 📋 الأسئلة والمحتوى:")
-                                            
-                                            q_list = exam.get("questions_data", [])
-                                            updated_q_list = []
+                    with branch_container:
+                        if br_name == "غير محدد":
+                            st.warning("⚠️ توجد سجلات قديمة لم يمكن تحديد فرعها بأمان. راجعها وحدد العلمي أو الأدبي، خصوصاً مادة الرياضيات.")
 
-                                            for idx, q in enumerate(q_list):
-                                                st.markdown(f"**السؤال / الفرع #{idx+1}**")
-                                                col_q1, col_q2 = st.columns([1, 1])
-                                                with col_q1:
-                                                    q_num = st.text_input("رقم السؤال", value=q.get("question_number", ""), key=f"qnum_{exam_id}_{idx}")
-                                                with col_q2:
-                                                    q_mark = st.text_input("الدرجة", value=q.get("mark", ""), key=f"qmark_{exam_id}_{idx}")
-                                                
-                                                q_cnt = st.text_area("نص السؤال", value=q.get("content", ""), height=90, key=f"qcnt_{exam_id}_{idx}")
-                                                q_svg = st.text_area("كود SVG للرسم", value=q.get("svg_code", ""), height=70, key=f"qsvg_{exam_id}_{idx}")
-                                                
-                                                if q_svg.strip():
-                                                    st.markdown("🎨 **معاينة الرسم الهندسي:**")
-                                                    components.html(f"<div style='display: flex; justify-content: center; background: white; padding: 10px; border-radius: 5px;'>{q_svg}</div>", height=150, scrolling=True)
-                                                
-                                                updated_q_list.append({
-                                                    "question_number": q_num,
-                                                    "mark": q_mark,
-                                                    "content": q_cnt,
-                                                    "svg_code": q_svg
-                                                })
-                                                st.markdown("---")
+                        for sbj_name, years in subjects.items():
+                            with st.expander(f"📚 المادة: **{sbj_name}**", expanded=False):
+                                for yr_name, terms in years.items():
+                                    with st.expander(f"📅 سنة: **{yr_name}**", expanded=False):
+                                        for trm_name, exams_list in terms.items():
+                                            for exam in exams_list:
+                                                exam_id = exam.get("id")
 
-                                            btn_c1, btn_c2 = st.columns([1, 1])
-                                            with btn_c1:
-                                                if st.button("💾 حفظ التعديلات", key=f"save_{exam_id}"):
-                                                    updated_record = {
-                                                        "subject": e_subject,
-                                                        "year": e_year,
-                                                        "stage": e_stage,
-                                                        "term": e_term, # تحديث الدور في العامود المستقل
-                                                        "branch": "عام",
-                                                        "questions_data": updated_q_list
-                                                    }
-                                                    update_cloud_exam(exam_id, updated_record)
-                                            
-                                            with btn_c2:
-                                                if st.button("🗑️ حذف الورقة بالكامل", key=f"del_{exam_id}"):
-                                                    delete_cloud_exam(exam_id)
+                                                with st.expander(f"📌 **{trm_name}** (انقر للتعديل أو العرض)", expanded=True):
+                                                    st.markdown("#### ✏️ تعديل بيانات الورقة:")
+
+                                                    c1, c2, c3, c4, c5 = st.columns(5)
+                                                    with c1:
+                                                        curr_stg = normalize_stage(exam.get("stage")) or STAGES_LIST[0]
+                                                        idx_stg = STAGES_LIST.index(curr_stg) if curr_stg in STAGES_LIST else 0
+                                                        e_stage = st.selectbox("المرحلة", STAGES_LIST, index=idx_stg, key=f"stg_{exam_id}")
+
+                                                    with c2:
+                                                        if e_stage == "السادس الإعدادي":
+                                                            curr_branch = normalize_branch(exam.get("stage"), exam.get("branch"), exam.get("subject"))
+                                                            edit_branch_options = PREPARATORY_BRANCHES.copy()
+                                                            if curr_branch == "غير محدد":
+                                                                edit_branch_options = ["غير محدد"] + edit_branch_options
+                                                            idx_branch = edit_branch_options.index(curr_branch) if curr_branch in edit_branch_options else 0
+                                                            e_branch = st.selectbox("الفرع", edit_branch_options, index=idx_branch, key=f"br_{exam_id}")
+                                                        else:
+                                                            e_branch = "عام"
+                                                            st.text_input("الفرع", value="عام", disabled=True, key=f"br_display_{exam_id}")
+
+                                                    with c3:
+                                                        valid_subs = get_subjects_for_stage(e_stage, e_branch)
+                                                        curr_sub = exam.get("subject", valid_subs[0])
+                                                        idx_sub = valid_subs.index(curr_sub) if curr_sub in valid_subs else 0
+                                                        e_subject = st.selectbox("المادة", valid_subs, index=idx_sub, key=f"sub_{exam_id}")
+
+                                                    with c4:
+                                                        curr_yr = str(exam.get("year", YEARS_LIST[0]))
+                                                        idx_yr = YEARS_LIST.index(curr_yr) if curr_yr in YEARS_LIST else 0
+                                                        e_year = st.selectbox("السنة", YEARS_LIST, index=idx_yr, key=f"yr_{exam_id}")
+
+                                                    with c5:
+                                                        curr_trm = exam.get("term", TERMS_LIST[0])
+                                                        idx_trm = TERMS_LIST.index(curr_trm) if curr_trm in TERMS_LIST else 0
+                                                        e_term = st.selectbox("الدور", TERMS_LIST, index=idx_trm, key=f"trm_{exam_id}")
+
+                                                    st.markdown("---")
+                                                    st.markdown("### 📋 الأسئلة والمحتوى:")
+
+                                                    q_list = exam.get("questions_data", [])
+                                                    updated_q_list = []
+
+                                                    for idx, q in enumerate(q_list):
+                                                        st.markdown(f"**السؤال / الفرع #{idx+1}**")
+                                                        col_q1, col_q2 = st.columns([1, 1])
+                                                        with col_q1:
+                                                            q_num = st.text_input("رقم السؤال", value=q.get("question_number", ""), key=f"qnum_{exam_id}_{idx}")
+                                                        with col_q2:
+                                                            q_mark = st.text_input("الدرجة", value=q.get("mark", ""), key=f"qmark_{exam_id}_{idx}")
+
+                                                        q_cnt = st.text_area("نص السؤال", value=q.get("content", ""), height=90, key=f"qcnt_{exam_id}_{idx}")
+                                                        q_svg = st.text_area("كود SVG للرسم", value=q.get("svg_code", ""), height=70, key=f"qsvg_{exam_id}_{idx}")
+
+                                                        if q_svg.strip():
+                                                            st.markdown("🎨 **معاينة الرسم الهندسي:**")
+                                                            components.html(f"<div style='display: flex; justify-content: center; background: white; padding: 10px; border-radius: 5px;'>{q_svg}</div>", height=150, scrolling=True)
+
+                                                        updated_q_list.append({
+                                                            "question_number": q_num,
+                                                            "mark": q_mark,
+                                                            "content": q_cnt,
+                                                            "svg_code": q_svg
+                                                        })
+                                                        st.markdown("---")
+
+                                                    btn_c1, btn_c2 = st.columns([1, 1])
+                                                    with btn_c1:
+                                                        if st.button("💾 حفظ التعديلات", key=f"save_{exam_id}"):
+                                                            updated_record = {
+                                                                "subject": e_subject,
+                                                                "year": e_year,
+                                                                "stage": e_stage,
+                                                                "term": e_term,
+                                                                "branch": e_branch,
+                                                                "questions_data": updated_q_list
+                                                            }
+                                                            update_cloud_exam(exam_id, updated_record)
+
+                                                    with btn_c2:
+                                                        if st.button("🗑️ حذف الورقة بالكامل", key=f"del_{exam_id}"):
+                                                            delete_cloud_exam(exam_id)
 
 # ----------------- التبويب الثالث: تصدير واستيراد البيانات -----------------
 with tab3:

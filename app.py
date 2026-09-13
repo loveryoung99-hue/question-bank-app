@@ -328,39 +328,139 @@ def extract_exam_data_via_gemini(images_list):
     st.error("❌ فشلت محاولات الاتصال عبر مفاتيح الـ API المتاحة.")
     return None
 
-# ================= 4. الشريط الجانبي (Sidebar) لمتابعة حالة المواد =================
+# ================= 4. الشريط الجانبي (Sidebar) لمتابعة حالة الرفع =================
 with st.sidebar:
-    st.header("📊 حالة المواد المرفوعة")
-    st.markdown("متابعة فورية لكافة المواد المرفوعة.")
-    
+    st.header("📊 متابعة الرفع")
+    st.markdown("اعرف بسرعة شنو مرفوع وشنو باقي حسب المرحلة والسنة والدور.")
+
     cloud_exams_status_check = fetch_cloud_exams()
+
+    # المفتاح الآن يشمل السنة حتى تكون حالة الرفع دقيقة لكل سنة ودور.
     uploaded_keys = set()
     for ex in cloud_exams_status_check:
         stg_val = normalize_stage(ex.get('stage'))
         if not stg_val:
             continue
         sbj_val = ex.get('subject') or "عام"
+        yr_val = str(ex.get('year') or "").strip()
         trm_val = ex.get('term') or "الدور الأول"
-        uploaded_keys.add(f"{stg_val}_{sbj_val}_{trm_val}")
+        if yr_val:
+            uploaded_keys.add((stg_val, sbj_val, yr_val, trm_val))
 
-    for stg in STAGES_LIST:
-        with st.expander(f"📌 {stg}", expanded=False):
-            subs = get_subjects_for_stage(stg)
-            stage_table_data = []
-            for sbj in subs:
-                for trm in TERMS_LIST:
-                    key_str = f"{stg}_{sbj}_{trm}"
-                    is_uploaded = key_str in uploaded_keys
-                    if is_uploaded:
-                        stage_table_data.append({
-                            "المادة": sbj,
-                            "الدور": trm,
-                            "الحالة": "🟢 مرفوع"
-                        })
-            if not stage_table_data:
-                st.info("لا توجد مواد مرفوعة مسجلة بدقة لهذه المرحلة.")
-            else:
-                st.dataframe(stage_table_data, use_container_width=True, hide_index=True)
+    # فلاتر المتابعة
+    filter_stage = st.selectbox(
+        "المرحلة",
+        STAGES_LIST,
+        key="status_filter_stage"
+    )
+
+    filter_year = st.selectbox(
+        "السنة",
+        YEARS_LIST,
+        key="status_filter_year"
+    )
+
+    available_subjects = get_subjects_for_stage(filter_stage)
+    filter_subject = st.selectbox(
+        "المادة",
+        ["الكل"] + available_subjects,
+        key="status_filter_subject"
+    )
+
+    filter_term = st.selectbox(
+        "الدور",
+        ["الكل"] + TERMS_LIST,
+        key="status_filter_term"
+    )
+
+    filter_status = st.selectbox(
+        "الحالة",
+        ["الكل", "🔴 باقي", "🟢 مرفوع"],
+        key="status_filter_status"
+    )
+
+    sort_mode = st.selectbox(
+        "الترتيب",
+        ["الباقي أولاً", "المرفوع أولاً", "حسب المادة", "حسب الدور"],
+        key="status_sort_mode"
+    )
+
+    # حساب تقدم الرفع للمرحلة والسنة المحددتين بالكامل، قبل تطبيق فلاتر المادة/الدور/الحالة.
+    full_status_rows = []
+    for sbj in available_subjects:
+        for trm in TERMS_LIST:
+            is_uploaded = (filter_stage, sbj, filter_year, trm) in uploaded_keys
+            full_status_rows.append({
+                "المادة": sbj,
+                "السنة": filter_year,
+                "الدور": trm,
+                "الحالة": "🟢 مرفوع" if is_uploaded else "🔴 باقي"
+            })
+
+    total_items = len(full_status_rows)
+    uploaded_count = sum(1 for row in full_status_rows if row["الحالة"] == "🟢 مرفوع")
+    remaining_count = total_items - uploaded_count
+    progress_value = (uploaded_count / total_items) if total_items else 0.0
+
+    st.markdown("---")
+    st.markdown(f"**التقدم — {filter_stage} / {filter_year}**")
+    st.progress(progress_value)
+
+    m1, m2 = st.columns(2)
+    with m1:
+        st.metric("مرفوع", uploaded_count)
+    with m2:
+        st.metric("باقي", remaining_count)
+
+    # تطبيق الفلاتر على الجدول المرئي.
+    stage_table_data = []
+    for row in full_status_rows:
+        if filter_subject != "الكل" and row["المادة"] != filter_subject:
+            continue
+        if filter_term != "الكل" and row["الدور"] != filter_term:
+            continue
+        if filter_status != "الكل" and row["الحالة"] != filter_status:
+            continue
+        stage_table_data.append(row)
+
+    # ترتيب عملي لمعرفة النواقص أولاً أو حسب رغبة المستخدم.
+    term_order = {term: idx for idx, term in enumerate(TERMS_LIST)}
+    status_order_remaining_first = {"🔴 باقي": 0, "🟢 مرفوع": 1}
+    status_order_uploaded_first = {"🟢 مرفوع": 0, "🔴 باقي": 1}
+
+    if sort_mode == "الباقي أولاً":
+        stage_table_data.sort(key=lambda row: (
+            status_order_remaining_first.get(row["الحالة"], 9),
+            row["المادة"],
+            term_order.get(row["الدور"], 9)
+        ))
+    elif sort_mode == "المرفوع أولاً":
+        stage_table_data.sort(key=lambda row: (
+            status_order_uploaded_first.get(row["الحالة"], 9),
+            row["المادة"],
+            term_order.get(row["الدور"], 9)
+        ))
+    elif sort_mode == "حسب الدور":
+        stage_table_data.sort(key=lambda row: (
+            term_order.get(row["الدور"], 9),
+            row["المادة"]
+        ))
+    else:
+        stage_table_data.sort(key=lambda row: (
+            row["المادة"],
+            term_order.get(row["الدور"], 9)
+        ))
+
+    st.markdown("---")
+    if not stage_table_data:
+        st.info("لا توجد نتائج مطابقة للفلاتر الحالية.")
+    else:
+        st.dataframe(
+            stage_table_data,
+            use_container_width=True,
+            hide_index=True,
+            height=min(560, 38 + (len(stage_table_data) * 35))
+        )
 
 # ================= 5. الواجهة الرئيسية والتنقل =================
 st.markdown(

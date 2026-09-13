@@ -18,7 +18,6 @@ st.set_page_config(
 # جلب المفاتيح بأمان تام من Streamlit Secrets
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
-# جلب قائمة المفاتيح بدلاً من مفتاح واحد
 GEMINI_KEYS = st.secrets.get("GEMINI_KEYS", [])
 
 HEADERS = {
@@ -55,13 +54,9 @@ def get_subjects_for_branch(branch):
 
 # ================= دالة التحسين الضمني للصور =================
 def enhance_image_silently(img):
-    """تقوم بتحسين التباين والجودة تلقائياً بشكل ضمني قبل إرسالها لـ Gemini"""
     try:
-        # تحسين التباين بمقدار 1.4
         enhancer = ImageEnhance.Contrast(img)
         img_enhanced = enhancer.enhance(1.4)
-        
-        # تحسين الحدة (Sharpness) لضمان وضوح النصوص
         sharpness_enhancer = ImageEnhance.Sharpness(img_enhanced)
         img_final = sharpness_enhancer.enhance(1.5)
         return img_final
@@ -105,6 +100,8 @@ def insert_cloud_exam(exam_record):
         
         if res.status_code in [200, 201]:
             st.success("✅ تم حفظ الورقة الامتحانية بنجاح!")
+            if 'extracted_data' in st.session_state:
+                del st.session_state['extracted_data']
             st.rerun()
         else:
             st.error(f"❌ خطأ في الحفظ (رمز الحالة {res.status_code}):")
@@ -138,7 +135,7 @@ def delete_cloud_exam(exam_id):
     except Exception as e:
         st.error(f"خطأ في الاتصال: {e}")
 
-# ================= 3. دالة الاستخراج الذكي عبر Gemini مع التدوير التلقائي =================
+# ================= 3. دالة الاستخراج الذكي عبر Gemini =================
 def extract_exam_data_via_gemini(images_list):
     if not GEMINI_KEYS:
         st.error("يرجى إعداد قائمة GEMINI_KEYS بشكل صحيح في إعدادات Secrets الخاصة بـ Streamlit!")
@@ -146,7 +143,7 @@ def extract_exam_data_via_gemini(images_list):
 
     prompt = """
     أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل (السادس، الخامس، والرابع الإعدادي). 
-    قم بتحليل الصور المرفقة حسب ترتيبها الدقيق (الصورة الأولى ثم الصورة الثانية إن وجدت) واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
+    قم بتحليل الصور المرفقة حسب ترتيبها الدقيق واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
     {
       "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا، الاقتصاد)",
       "year": "السنة الدراسية (مثال: 2024)",
@@ -165,7 +162,6 @@ def extract_exam_data_via_gemini(images_list):
     """
     contents = [prompt] + images_list
 
-    # المرور على المفاتيح بالتسلسل
     for idx, api_key in enumerate(GEMINI_KEYS):
         try:
             client = genai.Client(api_key=api_key)
@@ -178,28 +174,28 @@ def extract_exam_data_via_gemini(images_list):
             
         except Exception as e:
             err_str = str(e)
-            # إذا كان الخطأ بسبب تجاوز الحد (429) أو استنفاد الحصة، انتقل للمفتاح التالي مباشرة
             if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
                 continue
             else:
-                # إذا كان خطأ غير متوقع، نعرض تحذيراً ونستمر بتجربة باقي المفاتيح
                 st.warning(f"ملاحظة (المفتاح {idx+1}): {e}")
                 continue
 
-    # إذا انتهت الحلقة ولم تنجح أي محاولة
-    st.error("❌ لقد استنفدت حصة جميع مفاتيح الـ API المتاحة لليوم أو حدث خطأ يمنع الاتصال. يرجى المحاولة لاحقاً.")
+    st.error("❌ فشلت جميع محاولات الاتصال عبر مفاتيح الـ API المتاحة.")
     return None
 
 # ================= 4. الواجهة الرئيسية والتنقل =================
 st.title("📚 بنك الأسئلة الامتحانية - منصة 99+1")
 
-tab1, tab2 = st.tabs(["📤 رفع وتحليل ورقة امتحانية", "📁 إدارة الأوراق الامتحانية (المجلدات)"])
+tab1, tab2, tab3 = st.tabs([
+    "📤 رفع وتحليل ورقة امتحانية", 
+    "📁 إدارة الأوراق الامتحانية (المجلدات)",
+    "📥 تصدير واستيراد البيانات (Backup)"
+])
 
 # ----------------- التبويب الأول: الرفع والتحليل -----------------
 with tab1:
     st.subheader("رفع مستند PDF أو تحديد الصور بدقة (الأولى والثانية)")
     
-    # خيار رفع ملف PDF كامل
     pdf_file = st.file_uploader("📄 (اختياري) رفع ملف PDF للأسئلة", type=["pdf"])
     
     st.markdown("---")
@@ -216,7 +212,6 @@ with tab1:
     
     images_to_process = []
     
-    # معالجة ملف الـ PDF إذا تم رفعه وتحويل صفحاته إلى صور
     if pdf_file is not None:
         try:
             pdf_reader = pypdf.PdfReader(pdf_file)
@@ -224,7 +219,6 @@ with tab1:
         except Exception as e:
             st.error(f"قراءة ملف الـ PDF فشلت: {e}")
 
-    # تجميع الصور حسب الترتيب الصحيح لمنع أي تقديم أو تأخير
     if img_file_1:
         pil_1 = Image.open(img_file_1)
         enhanced_1 = enhance_image_silently(pil_1)
@@ -237,14 +231,14 @@ with tab1:
 
     if images_to_process:
         st.markdown("---")
-        st.markdown("### 👀 معاينة الصور المرفوعة (مع التحسين الضمني للوضوح والتباين):")
+        st.markdown("### 👀 معاينة الصور المرفوعة:")
         cols = st.columns(len(images_to_process))
         for idx, img_p in enumerate(images_to_process):
             with cols[idx]:
                 st.image(img_p, caption=f"الصفحة #{idx+1} (محسنة)", use_container_width=True)
 
         if st.button("🔍 استخراج وتحليل الأسئلة عبر الذكاء الاصطناعي", type="primary"):
-            with st.spinner("جاري قراءة الصفحات وتحليل الأسئلة بدقة... (قد يستغرق بضع ثوانٍ)"):
+            with st.spinner("جاري قراءة الصفحات وتحليل الأسئلة بدقة..."):
                 extracted = extract_exam_data_via_gemini(images_to_process)
                 if extracted:
                     st.success("تم التحليل بنجاح! طابق الحقول بالأسفل.")
@@ -308,7 +302,7 @@ with tab1:
         q_svg = st.text_area("كود SVG للرسم", value=q.get("svg_code", ""), height=70, key=f"gen_qsvg_{idx}")
         
         if q_svg.strip():
-            st.markdown("🎨 **معاينة الرسم الهندسي (مطابق للأصل):**")
+            st.markdown("🎨 **معاينة الرسم الهندسي:**")
             components.html(f"<div style='display: flex; justify-content: center; background: white; padding: 10px; border-radius: 5px;'>{q_svg}</div>", height=150, scrolling=True)
         
         editable_questions.append({
@@ -408,7 +402,7 @@ with tab2:
                                                         q_svg = st.text_area("كود SVG للرسم", value=q.get("svg_code", ""), height=70, key=f"qsvg_{exam_id}_{idx}")
                                                         
                                                         if q_svg.strip():
-                                                            st.markdown("🎨 **معاينة الرسم الهندسي (مطابق للأصل):**")
+                                                            st.markdown("🎨 **معاينة الرسم الهندسي:**")
                                                             components.html(f"<div style='display: flex; justify-content: center; background: white; padding: 10px; border-radius: 5px;'>{q_svg}</div>", height=150, scrolling=True)
                                                         
                                                         updated_q_list.append({
@@ -435,3 +429,58 @@ with tab2:
                                                     with btn_c2:
                                                         if st.button("🗑️ حذف الورقة بالكامل", key=f"del_{exam_id}"):
                                                             delete_cloud_exam(exam_id)
+
+# ----------------- التبويب الثالث: تصدير واستيراد البيانات -----------------
+with tab3:
+    st.subheader("📥 تصدير واستيراد قاعدة البيانات بالكامل (Backup)")
+    st.markdown("من هنا يمكنك حفظ نسخة احتياطية من كافة الأسئلة والمجلدات والتقسيمات بملف واحد بصيغة JSON، أو استعادة نسخة سابقة.")
+
+    col_exp, col_imp = st.columns(2)
+
+    with col_exp:
+        st.markdown("### 📤 تصدير البيانات (Export)")
+        st.info("اضغط على الزر أدناه لتنزيل ملف يحتوي على كل الأسئلة والتقسيمات المخزنة حالياً في قاعدة البيانات.")
+        
+        all_exams_data = fetch_cloud_exams()
+        if all_exams_data:
+            json_string = json.dumps(all_exams_data, ensure_ascii=False, indent=4)
+            st.download_button(
+                label="📥 تحميل ملف النسخة الاحتياطية (JSON)",
+                data=json_string,
+                file_name="99_plus_1_exams_backup.json",
+                mime="application/json",
+                type="primary"
+            )
+        else:
+            st.warning("لا توجد بيانات كافية للتصدير حالياً.")
+
+    with col_imp:
+        st.markdown("### 📥 استيراد البيانات (Import)")
+        st.warning("⚠️ ملاحظة: عند رفع ملف النسخة الاحتياطية، سيتم إدخال البيانات المضمنة فيه إلى قاعدة البيانات الحالية.")
+        
+        uploaded_backup_file = st.file_uploader("اختر ملف النسخة الاحتياطية (.json)", type=["json"])
+        
+        if uploaded_backup_file is not None:
+            if st.button("🚀 بدء رفع واستعادة البيانات إلى قاعدة البيانات", type="primary"):
+                try:
+                    backup_content = json.load(uploaded_backup_file)
+                    if isinstance(backup_content, list):
+                        base_url = clean_supabase_url(SUPABASE_URL)
+                        url = f"{base_url}/rest/v1/exam_papers"
+                        
+                        success_count = 0
+                        for record in backup_content:
+                            # إزالة الـ id القديم لكي يقوم النظام بتوليد معرفات جديدة أو إضافتها بأمان
+                            if 'id' in record:
+                                del record['id']
+                            
+                            res = requests.post(url, headers=HEADERS, json=record)
+                            if res.status_code in [200, 201]:
+                                success_count += 1
+                                
+                        st.success(f"✅ تمت استعادة بنجاح ({success_count}) ورقة امتحانية إلى قاعدة البيانات!")
+                        st.rerun()
+                    else:
+                        st.error("❌ صيغة الملف غير صحيحة، يجب أن يكون ملف JSON يمثل قائمة من الأوراق الامتحانية.")
+                except Exception as e:
+                    st.error(f"خطأ أثناء قراءة أو استيراد الملف: {e}")

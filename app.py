@@ -194,6 +194,30 @@ tab1, tab2, tab3 = st.tabs([
 
 # ----------------- التبويب الأول: الرفع والتحليل -----------------
 with tab1:
+    st.subheader("📊 جدول متابعة حالة المواد المرفوعة")
+    cloud_exams_status_check = fetch_cloud_exams()
+    uploaded_keys = set()
+    for ex in cloud_exams_status_check:
+        uploaded_keys.add(f"{ex.get('stage')}_{ex.get('branch')}_{ex.get('subject')}")
+
+    status_table_data = []
+    for stg in STAGES_LIST:
+        for brn in BRANCHES_LIST:
+            subs = get_subjects_for_branch(brn)
+            for sbj in subs:
+                key_str = f"{stg}_{brn}_{sbj}"
+                is_uploaded = key_str in uploaded_keys
+                status_text = "🟢 مرفوع" if is_uploaded else "🔴 غير مرفوع"
+                status_table_data.append({
+                    "المرحلة": stg,
+                    "الفرع / القسم": brn,
+                    "المادة": sbj,
+                    "حالة الرفع": status_text
+                })
+    
+    st.dataframe(status_table_data, use_container_width=True)
+    st.markdown("---")
+
     st.subheader("رفع مستند PDF أو تحديد الصور بدقة (الأولى والثانية)")
     
     pdf_file = st.file_uploader("📄 (اختياري) رفع ملف PDF للأسئلة", type=["pdf"])
@@ -470,7 +494,6 @@ with tab3:
                         
                         success_count = 0
                         for record in backup_content:
-                            # إزالة الـ id القديم لكي يقوم النظام بتوليد معرفات جديدة أو إضافتها بأمان
                             if 'id' in record:
                                 del record['id']
                             

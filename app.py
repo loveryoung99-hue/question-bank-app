@@ -353,7 +353,7 @@ with tab1:
         }
         insert_cloud_exam(final_record)
 
-# ----------------- التبويب الثاني: العرض الهيكلي للمجلدات -----------------
+# ----------------- التبويب الثاني: العرض الهيكلي للمجلدات (مع تطابق مرن للملفات السابقة والجديدة) -----------------
 with tab2:
     st.subheader("📁 الأوراق الامتحانية (عرض الهيكلية والمجلدات)")
     
@@ -369,17 +369,23 @@ with tab2:
     else:
         tree = {}
         for exam in cloud_exams:
-            stg = exam.get("stage") or ""
+            stg = exam.get("stage") or "أخرى غير مصنفة"
             
-            # حصر العرض بالمراحل الأربعة المحددة فقط وتجاهل البقية
-            if stg not in STAGES_LIST:
-                continue
+            # تصنيف مرن يضمن ظهور البيانات السابقة ضمن المراحل المسموحة بدلاً من إخفائها
+            matched_stage = "السادس العلمي"  # افتراضي افتراضي للسجلات القديمة غير المعرفة تماماً لتظهر ولا تختفي
+            for known_stg in STAGES_LIST:
+                if known_stg in str(stg):
+                    matched_stage = known_stg
+                    break
+            if matched_stage not in STAGES_LIST:
+                # إذا لم تنطبق، نضعها في السادس العلمي افتراضياً أو نتخطاها، لكن الأفضل دمجها بشكل مرن لئلا تفقد شيئاً
+                matched_stage = STAGES_LIST[0]
 
             sbj = exam.get("subject") or "عام"
             yr  = str(exam.get("year") or "بدون سنة")
             trm = exam.get("term") or "الدور الأول"
 
-            tree.setdefault(stg, {})\
+            tree.setdefault(matched_stage, {})\
                 .setdefault(sbj, {})\
                 .setdefault(yr, {})\
                 .setdefault(trm, []).append(exam)

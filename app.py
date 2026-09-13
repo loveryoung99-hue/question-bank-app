@@ -33,24 +33,39 @@ def clean_supabase_url(url):
         url = url[:-8]
     return url.rstrip('/')
 
-# ================= الثوابت المحدثة =================
-STAGES_LIST = ["السادس الاعدادي", "الخامس الاعدادي", "الرابع الاعدادي"]
-BRANCHES_LIST = ["العلمي", "الأدبي", "المواد المشتركة"]
+# ================= الثوابت المحدثة والمراحل الشاملة =================
+STAGES_LIST = [
+    "السادس الاعدادي", 
+    "الخامس الاعدادي", 
+    "الرابع الاعدادي", 
+    "الثالث المتوسط", 
+    "الثاني المتوسط", 
+    "الأول المتوسط", 
+    "السادس الابتدائي", 
+    "الخامس الابتدائي", 
+    "الرابع الابتدائي"
+]
+
+BRANCHES_LIST = ["العلمي", "الأدبي", "المواد المشتركة", "عام"]
 
 SHARED_SUBJECTS = ["اللغة العربية", "اللغة الإنجليزية", "الاسلامية"]
 SCIENTIFIC_SUBJECTS = ["الرياضيات", "الفيزياء", "الكيمياء", "الأحياء"]
 LITERARY_SUBJECTS = ["التاريخ", "الجغرافيا", "الرياضيات", "الاقتصاد"]
+GENERAL_SUBJECTS = ["الرياضيات", "اللغة العربية", "اللغة الإنجليزية", "الاسلامية", "الاجتماعيات", "العلوم"]
+
+def get_subjects_for_stage_and_branch(stage, branch):
+    if "الاعدادي" in stage:
+        if branch == "العلمي":
+            return sorted(SCIENTIFIC_SUBJECTS)
+        elif branch == "الأدبي":
+            return sorted(LITERARY_SUBJECTS)
+        else:
+            return sorted(SHARED_SUBJECTS)
+    else:
+        return sorted(GENERAL_SUBJECTS)
 
 YEARS_LIST = [str(y) for y in range(2026, 2010, -1)]
 TERMS_LIST = ["الدور الأول", "الدور الثاني", "الدور الثالث", "تمهيدي"]
-
-def get_subjects_for_branch(branch):
-    if branch == "العلمي":
-        return sorted(SCIENTIFIC_SUBJECTS)
-    elif branch == "الأدبي":
-        return sorted(LITERARY_SUBJECTS)
-    else:
-        return sorted(SHARED_SUBJECTS)
 
 # ================= دالة التحسين الضمني للصور =================
 def enhance_image_silently(img):
@@ -142,14 +157,14 @@ def extract_exam_data_via_gemini(images_list):
         return None
 
     prompt = """
-    أنت خبير في تحليل الأوراق الامتحانية العراقية للمراحل (السادس، الخامس، والرابع الإعدادي). 
+    أنت خبير في تحليل الأوراق الامتحانية العراقية لجميع المراحل الدراسية. 
     قم بتحليل الصور المرفقة حسب ترتيبها الدقيق واستخراج البيانات التالية بصيغة JSON حصرية بدون أي نصوص أخرى:
     {
-      "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا، الاقتصاد)",
+      "subject": "اسم المادة (مثل: الرياضيات، الفيزياء، الكيمياء، الأحياء، اللغة العربية، اللغة الإنجليزية، الاسلامية، التاريخ، الجغرافيا، الاقتصاد، الاجتماعيات، العلوم)",
       "year": "السنة الدراسية (مثال: 2024)",
       "term": "الدور (مثال: الدور الأول أو الدور الثاني أو الدور الثالث أو تمهيدي)",
-      "stage": "المرحلة (اختر حصراً من: السادس الاعدادي، الخامس الاعدادي، الرابع الاعدادي)",
-      "branch": "الفرع أو القسم (اختر: العلمي أو الأدبي أو المواد المشتركة بناءً على المادة المستخرجة)",
+      "stage": "المرحلة (اختر حصراً من: السادس الاعدادي، الخامس الاعدادي، الرابع الاعدادي، الثالث المتوسط، الثاني المتوسط، الأول المتوسط، السادس الابتدائي، الخامس الابتدائي، الرابع الابتدائي)",
+      "branch": "الفرع أو القسم (اختر: العلمي أو الأدبي أو المواد المشتركة أو عام)",
       "questions": [
          {
            "question_number": "رقم السؤال/الفرع (مثال: س1/أ)",
@@ -177,13 +192,45 @@ def extract_exam_data_via_gemini(images_list):
             if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
                 continue
             else:
-                st.warning(f"ملاحظة (المفتاح {idx+1}): {e}")
                 continue
 
-    st.error("❌ فشلت جميع محاولات الاتصال عبر مفاتيح الـ API المتاحة.")
+    st.error("❌ فشلت محاولات الاتصال عبر مفاتيح الـ API المتاحة.")
     return None
 
-# ================= 4. الواجهة الرئيسية والتنقل =================
+# ================= 4. الشريط الجانبي (Sidebar) لمتابعة حالة المواد حسب المرحلة =================
+with st.sidebar:
+    st.header("📊 حالة المواد المرفوعة")
+    st.markdown("متابعة فورية للمواد المرفوعة مقسمة لكل مرحلة.")
+    
+    cloud_exams_status_check = fetch_cloud_exams()
+    uploaded_keys = set()
+    for ex in cloud_exams_status_check:
+        uploaded_keys.add(f"{ex.get('stage')}_{ex.get('branch')}_{ex.get('subject')}")
+
+    # إنشاء جداول مخصصة لكل مرحلة في الشريط الجانبي
+    for stg in STAGES_LIST:
+        with st.expander(f"📌 {stg}", expanded=False):
+            # تحديد الفروع المرتبطة بالمرحلة
+            if "الاعدادي" in stg:
+                active_branches = ["العلمي", "الأدبي", "المواد المشتركة"]
+            else:
+                active_branches = ["عام"]
+                
+            stage_table_data = []
+            for brn in active_branches:
+                subs = get_subjects_for_stage_and_branch(stg, brn)
+                for sbj in subs:
+                    key_str = f"{stg}_{brn}_{sbj}"
+                    is_uploaded = key_str in uploaded_keys
+                    status_text = "🟢 مرفوع" if is_uploaded else "🔴 غير مرفوع"
+                    stage_table_data.append({
+                        "الفرع": brn if len(active_branches) > 1 else "-",
+                        "المادة": sbj,
+                        "الحالة": status_text
+                    })
+            st.dataframe(stage_table_data, use_container_width=True, hide_index=True)
+
+# ================= 5. الواجهة الرئيسية والتنقل =================
 st.title("📚 بنك الأسئلة الامتحانية - منصة 99+1")
 
 tab1, tab2, tab3 = st.tabs([
@@ -194,30 +241,6 @@ tab1, tab2, tab3 = st.tabs([
 
 # ----------------- التبويب الأول: الرفع والتحليل -----------------
 with tab1:
-    st.subheader("📊 جدول متابعة حالة المواد المرفوعة")
-    cloud_exams_status_check = fetch_cloud_exams()
-    uploaded_keys = set()
-    for ex in cloud_exams_status_check:
-        uploaded_keys.add(f"{ex.get('stage')}_{ex.get('branch')}_{ex.get('subject')}")
-
-    status_table_data = []
-    for stg in STAGES_LIST:
-        for brn in BRANCHES_LIST:
-            subs = get_subjects_for_branch(brn)
-            for sbj in subs:
-                key_str = f"{stg}_{brn}_{sbj}"
-                is_uploaded = key_str in uploaded_keys
-                status_text = "🟢 مرفوع" if is_uploaded else "🔴 غير مرفوع"
-                status_table_data.append({
-                    "المرحلة": stg,
-                    "الفرع / القسم": brn,
-                    "المادة": sbj,
-                    "حالة الرفع": status_text
-                })
-    
-    st.dataframe(status_table_data, use_container_width=True)
-    st.markdown("---")
-
     st.subheader("رفع مستند PDF أو تحديد الصور بدقة (الأولى والثانية)")
     
     pdf_file = st.file_uploader("📄 (اختياري) رفع ملف PDF للأسئلة", type=["pdf"])
@@ -282,21 +305,23 @@ with tab1:
         
     with col_in2:
         ai_branch = data.get("branch", "العلمي")
-        if "المشتركة" in ai_branch or "مشتركة" in ai_branch:
-            ai_branch = "المواد المشتركة"
-        elif "الأدبي" in ai_branch:
-            ai_branch = "الأدبي"
-        elif "العلمي" in ai_branch:
-            ai_branch = "العلمي"
+        if "الاعدادي" in selected_stage:
+            valid_branches_options = ["العلمي", "الأدبي", "المواد المشتركة"]
+        else:
+            valid_branches_options = ["عام"]
+            ai_branch = "عام"
             
-        default_branch_idx = BRANCHES_LIST.index(ai_branch) if ai_branch in BRANCHES_LIST else 0
-        selected_branch = st.selectbox("الفرع / القسم", BRANCHES_LIST, index=default_branch_idx)
+        if ai_branch not in valid_branches_options:
+            ai_branch = valid_branches_options[0]
+            
+        default_branch_idx = valid_branches_options.index(ai_branch) if ai_branch in valid_branches_options else 0
+        selected_branch = st.selectbox("الفرع / القسم", valid_branches_options, index=default_branch_idx)
         
     with col_in3:
-        current_branch_subjects = get_subjects_for_branch(selected_branch)
-        ai_subject = data.get("subject", "الرياضيات")
-        default_sub_idx = current_branch_subjects.index(ai_subject) if ai_subject in current_branch_subjects else 0
-        selected_subject = st.selectbox("المادة", current_branch_subjects, index=default_sub_idx)
+        current_stage_subjects = get_subjects_for_stage_and_branch(selected_stage, selected_branch)
+        ai_subject = data.get("subject", current_stage_subjects[0])
+        default_sub_idx = current_stage_subjects.index(ai_subject) if ai_subject in current_stage_subjects else 0
+        selected_subject = st.selectbox("المادة", current_stage_subjects, index=default_sub_idx)
         
     with col_in4:
         ai_year = str(data.get("year", "2024"))
@@ -393,12 +418,16 @@ with tab2:
                                                     with c1:
                                                         e_stage = st.selectbox("المرحلة", STAGES_LIST, index=STAGES_LIST.index(exam.get("stage")) if exam.get("stage") in STAGES_LIST else 0, key=f"stg_{exam_id}")
                                                     with c2:
+                                                        if "الاعدادي" in e_stage:
+                                                            av_brn = ["العلمي", "الأدبي", "المواد المشتركة"]
+                                                        else:
+                                                            av_brn = ["عام"]
                                                         current_brn = exam.get("branch")
-                                                        if current_brn not in BRANCHES_LIST:
-                                                            current_brn = "العلمي"
-                                                        e_branch = st.selectbox("الفرع", BRANCHES_LIST, index=BRANCHES_LIST.index(current_brn), key=f"brn_{exam_id}")
+                                                        if current_brn not in av_brn:
+                                                            current_brn = av_brn[0]
+                                                        e_branch = st.selectbox("الفرع", av_brn, index=av_brn.index(current_brn), key=f"brn_{exam_id}")
                                                     with c3:
-                                                        valid_subs = get_subjects_for_branch(e_branch)
+                                                        valid_subs = get_subjects_for_stage_and_branch(e_stage, e_branch)
                                                         current_sub = exam.get("subject")
                                                         if current_sub not in valid_subs:
                                                             current_sub = valid_subs[0]
